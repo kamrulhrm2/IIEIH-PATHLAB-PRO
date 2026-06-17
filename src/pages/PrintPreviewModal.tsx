@@ -159,17 +159,40 @@ export default function PrintPreviewModal({ request, tests, onClose }: PrintPrev
     setBusy('pdf');
     try {
       const pdf = await generatePdf(slipName);
-      // Explicit anchor download — more reliable than jsPDF's internal save().
+      const pdfDataUrl = pdf.output('datauristring');
+      const filename = `${slipName}.pdf`;
+
+      // Try server-based download first (saves to Downloads folder)
+      try {
+        const response = await fetch('http://localhost:5000/api/download', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename,
+            pdfData: pdfDataUrl,
+          }),
+        });
+
+        const result = await response.json();
+        if (result.success) {
+          toast.success(`PDF downloaded to Downloads folder: ${filename}`);
+          return;
+        }
+      } catch (serverError) {
+        console.warn('Download server not available, using browser download', serverError);
+      }
+
+      // Fallback: Browser download if server not available
       const blob = pdf.output('blob');
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${slipName}.pdf`;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 1500);
-      toast.success('PDF downloaded');
+      toast.success(`PDF downloaded: ${filename}`);
     } catch (e) {
       toast.error(`Could not generate PDF — ${(e as Error).message}`);
     } finally {
