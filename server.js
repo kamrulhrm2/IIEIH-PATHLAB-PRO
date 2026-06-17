@@ -8,11 +8,14 @@
  * The server saves the file to the user's Downloads folder
  */
 
-const express = require('express');
-const cors = require('cors');
-const path = require('path');
-const fs = require('fs').promises;
-const os = require('os');
+import express from 'express';
+import cors from 'cors';
+import path from 'path';
+import { promises as fs } from 'fs';
+import os from 'os';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 const PORT = 5000;

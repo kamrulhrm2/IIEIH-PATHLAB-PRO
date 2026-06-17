@@ -45,6 +45,7 @@ const ROLES: { value: UserRole; label: string; hint: string }[] = [
   { value: 'hr', label: 'HR', hint: 'HR queue, employees, reports' },
   { value: 'doctor', label: 'Doctor', hint: 'Doctor queue, own requests' },
   { value: 'pathologist', label: 'Pathologist', hint: 'Pathology queue, test library, slips' },
+  { value: 'medical', label: 'Medical Services', hint: 'Medical Services queue, approve/reject requests' },
   { value: 'user', label: 'Employee', hint: 'Submit and track own requests' },
 ];
 
