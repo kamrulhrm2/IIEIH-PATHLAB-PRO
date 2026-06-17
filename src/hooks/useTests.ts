@@ -35,6 +35,35 @@ export function useSaveTest() {
   });
 }
 
+export type NewLabTest = Omit<LabTest, 'id' | 'created_at' | 'updated_at'>;
+
+/** Insert many tests at once (CSV bulk import); auto-creates any missing categories. */
+export function useBulkInsertTests() {
+  return useMutation({
+    mutationFn: async (rows: NewLabTest[]) => {
+      // Make sure every referenced category exists so it shows in dropdowns/filters.
+      const categories = [...new Set(rows.map((r) => r.category).filter(Boolean))];
+      if (categories.length > 0) {
+        const { error: catError } = await supabase
+          .from('test_categories')
+          .upsert(categories.map((name) => ({ name })), {
+            onConflict: 'name',
+            ignoreDuplicates: true,
+          });
+        if (catError) throw catError;
+      }
+      const { error } = await supabase.from('tests').insert(rows);
+      if (error) throw error;
+      return rows.length;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tests'] });
+      queryClient.invalidateQueries({ queryKey: ['test-categories'] });
+    },
+    onError: (e: Error) => toast.error(`Bulk import failed — ${e.message}`),
+  });
+}
+
 export function useTestCategories() {
   return useQuery({
     queryKey: ['test-categories'],

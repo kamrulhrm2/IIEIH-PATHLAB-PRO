@@ -5,7 +5,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
-  Download,
   FileDown,
   Gauge,
   Loader2,
@@ -49,6 +48,7 @@ import {
 import { PageHeader } from '@/components/layout/PageHeader';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { ExportMenu } from '@/components/shared/ExportMenu';
 import { useAuth } from '@/context/AuthContext';
 import {
   useBulkInsertEmployees,
@@ -260,33 +260,28 @@ export default function EmployeesPage() {
     );
   };
 
-  const exportCsv = () => {
-    downloadCsv(
-      `employees-${new Date().toISOString().slice(0, 10)}.csv`,
-      [
-        'Employee Code',
-        'Name',
-        'Designation',
-        'Department',
-        'Status',
-        'Annual Quota',
-        'Quota Type',
-        'Join Date',
-        'Contact',
-      ],
-      filtered.map((e) => [
-        e.emp_code,
-        e.name,
-        e.designation,
-        e.department,
-        e.status,
-        effectiveQuota(e),
-        e.quota_override != null ? 'Custom' : 'Default',
-        e.join_date ? formatDate(e.join_date) : '',
-        e.contact,
-      ])
-    );
-  };
+  const exportHeaders = [
+    'Employee Code',
+    'Name',
+    'Designation',
+    'Department',
+    'Status',
+    'Annual Quota',
+    'Quota Type',
+    'Join Date',
+    'Contact',
+  ];
+  const exportRows = filtered.map((e) => [
+    e.emp_code,
+    e.name,
+    e.designation,
+    e.department,
+    e.status,
+    effectiveQuota(e),
+    e.quota_override != null ? 'Custom' : 'Default',
+    e.join_date ? formatDate(e.join_date) : '',
+    e.contact,
+  ]);
 
   // ---- CSV bulk import ----
   const IMPORT_COLUMNS = [
@@ -414,9 +409,13 @@ export default function EmployeesPage() {
         subtitle={`${employees.length} total · ${confirmed} confirmed`}
         actions={
           <>
-            <Button variant="outline" onClick={exportCsv} disabled={filtered.length === 0}>
-              <Download className="h-4 w-4" /> Export CSV
-            </Button>
+            <ExportMenu
+              filename={`employees-${new Date().toISOString().slice(0, 10)}`}
+              sheetName="Employees"
+              headers={exportHeaders}
+              rows={exportRows}
+              disabled={filtered.length === 0}
+            />
             <Button variant="outline" onClick={openImport}>
               <Upload className="h-4 w-4" /> Import CSV
             </Button>

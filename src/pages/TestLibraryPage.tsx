@@ -1,6 +1,7 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useMemo, useRef, useState, type FormEvent } from 'react';
 import {
-  Download,
+  AlertTriangle,
+  FileDown,
   FlaskConical,
   FolderPlus,
   Loader2,
@@ -8,6 +9,7 @@ import {
   Plus,
   Search,
   Trash2,
+  Upload,
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -32,18 +34,29 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { ExportMenu } from '@/components/shared/ExportMenu';
 import { useAuth } from '@/context/AuthContext';
 import {
+  useBulkInsertTests,
   useCreateTestCategory,
   useDeleteTest,
   useSaveTest,
   useTestCategories,
   useTests,
+  type NewLabTest,
 } from '@/hooks/useTests';
-import { downloadCsv } from '@/lib/csv';
+import { downloadCsv, parseCsv } from '@/lib/csv';
 import { cn, formatCurrency } from '@/lib/utils';
 import type { LabTest } from '@/types';
 
@@ -68,6 +81,7 @@ export default function TestLibraryPage() {
   const save = useSaveTest();
   const remove = useDeleteTest();
   const createCategory = useCreateTestCategory();
+  const bulkInsert = useBulkInsertTests();
 
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -83,6 +97,13 @@ export default function TestLibraryPage() {
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
   const [headerCategoryName, setHeaderCategoryName] = useState('');
   const [categoryError, setCategoryError] = useState('');
+
+  // CSV bulk import
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importFileName, setImportFileName] = useState('');
+  const [importRows, setImportRows] = useState<NewLabTest[]>([]);
+  const [importErrors, setImportErrors] = useState<string[]>([]);
 
   const activeCount = tests.filter((t) => t.is_active).length;
 
@@ -105,18 +126,106 @@ export default function TestLibraryPage() {
     setDialogOpen(true);
   };
 
-  const exportCsv = () => {
-    downloadCsv(
-      `tests-${new Date().toISOString().slice(0, 10)}.csv`,
-      ['Code', 'Name', 'Category', 'Price (BDT)', 'Status'],
-      filtered.map((t) => [
-        t.code,
-        t.name,
-        t.category,
-        t.price,
-        t.is_active ? 'Active' : 'Inactive',
-      ])
-    );
+  const exportHeaders = ['Code', 'Name', 'Category', 'Price (BDT)', 'Status'];
+  const exportRows = filtered.map((t) => [
+    t.code,
+    t.name,
+    t.category,
+    t.price,
+    t.is_active ? 'Active' : 'Inactive',
+  ]);
+
+  // ---- CSV bulk import ----
+  const IMPORT_COLUMNS = ['code', 'name', 'category', 'price', 'is_active'];
+
+  const downloadTemplate = () => {
+    downloadCsv('test-import-template.csv', IMPORT_COLUMNS, [
+      ['CBC', 'Complete Blood Count', 'Hematology', '400', 'active'],
+      ['LFT', 'Liver Function Test', 'Biochemistry', '1200', 'active'],
+    ]);
+  };
+
+  const openImport = () => {
+    setImportFileName('');
+    setImportRows([]);
+    setImportErrors([]);
+    setImportOpen(true);
+  };
+
+  const handleFile = async (file: File) => {
+    setImportFileName(file.name);
+    setImportRows([]);
+    setImportErrors([]);
+
+    const grid = parseCsv(await file.text());
+    if (grid.length < 2) {
+      setImportErrors(['The file is empty or has no data rows below the header.']);
+      return;
+    }
+
+    const header = grid[0].map((h) => h.trim().toLowerCase());
+    const col = (name: string) => header.indexOf(name);
+    const iCode = col('code');
+    const iName = col('name');
+    const iCat = col('category');
+    if (iCode === -1 || iName === -1 || iCat === -1) {
+      setImportErrors([
+        'Missing required columns. The header must include "code", "name" and "category". Download the template for the exact format.',
+      ]);
+      return;
+    }
+    const iPrice = col('price');
+    const iActive = col('is_active');
+
+    const existing = new Set(tests.map((t) => t.code));
+    const seen = new Set<string>();
+    const valid: NewLabTest[] = [];
+    const errors: string[] = [];
+    const cell = (r: string[], i: number) => (i >= 0 ? (r[i] ?? '').trim() : '');
+
+    grid.slice(1).forEach((r, idx) => {
+      const line = idx + 2;
+      const code = cell(r, iCode).toUpperCase();
+      const name = cell(r, iName);
+      const category = cell(r, iCat);
+
+      if (!code) return errors.push(`Row ${line}: test code is required.`);
+      if (!/^[A-Z0-9-]{1,30}$/.test(code))
+        return errors.push(`Row ${line}: code "${code}" must be alphanumeric (max 30 chars).`);
+      if (!name) return errors.push(`Row ${line}: test name is required.`);
+      if (!category) return errors.push(`Row ${line}: category is required.`);
+      if (existing.has(code))
+        return errors.push(`Row ${line}: code ${code} already exists in the system.`);
+      if (seen.has(code)) return errors.push(`Row ${line}: code ${code} is duplicated in the file.`);
+
+      let price = 0;
+      const p = cell(r, iPrice);
+      if (p) {
+        const n = Number(p);
+        if (isNaN(n) || n < 0)
+          return errors.push(`Row ${line}: price "${p}" must be a non-negative number.`);
+        price = n;
+      }
+
+      // Blank / true / active / yes / 1 → active; anything else (inactive/false/no/0) → inactive
+      const is_active = ['', 'true', 'active', 'yes', '1'].includes(cell(r, iActive).toLowerCase());
+
+      seen.add(code);
+      valid.push({ code, name, category, price, is_active });
+    });
+
+    setImportRows(valid);
+    setImportErrors(errors);
+  };
+
+  const runImport = () => {
+    if (importRows.length === 0) return;
+    bulkInsert.mutate(importRows, {
+      onSuccess: (count) => {
+        toast.success(`Imported ${count} test${count === 1 ? '' : 's'} successfully`);
+        setImportOpen(false);
+      },
+    });
   };
 
   const openEdit = (t: LabTest) => {
@@ -209,11 +318,18 @@ export default function TestLibraryPage() {
         subtitle={`${activeCount} pathology tests available`}
         actions={
           <>
-            <Button variant="outline" onClick={exportCsv} disabled={filtered.length === 0}>
-              <Download className="h-4 w-4" /> Export CSV
-            </Button>
+            <ExportMenu
+              filename={`tests-${new Date().toISOString().slice(0, 10)}`}
+              sheetName="Tests"
+              headers={exportHeaders}
+              rows={exportRows}
+              disabled={filtered.length === 0}
+            />
             {canEdit && (
               <>
+                <Button variant="outline" onClick={openImport}>
+                  <Upload className="h-4 w-4" /> Import CSV
+                </Button>
                 <Button variant="outline" onClick={openCategoryDialog}>
                   <FolderPlus className="h-4 w-4" /> New Category
                 </Button>
@@ -479,6 +595,125 @@ export default function TestLibraryPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* CSV bulk import dialog */}
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Import Tests from CSV</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+              <p>
+                Upload a <span className="font-medium">.csv</span> file with a header row. Required
+                columns: <span className="font-mono font-semibold">code</span>,{' '}
+                <span className="font-mono font-semibold">name</span>,{' '}
+                <span className="font-mono font-semibold">category</span>. Optional:{' '}
+                <span className="font-mono">price, is_active</span>. New categories are created
+                automatically.
+              </p>
+              <Button
+                type="button"
+                variant="link"
+                className="mt-1 h-auto p-0 text-blue-600"
+                onClick={downloadTemplate}
+              >
+                <FileDown className="h-4 w-4" /> Download template
+              </Button>
+            </div>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleFile(f);
+                e.target.value = '';
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full justify-start font-normal text-slate-600"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className="h-4 w-4" /> {importFileName || 'Choose CSV file…'}
+            </Button>
+
+            {(importRows.length > 0 || importErrors.length > 0) && (
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <Badge
+                    variant="outline"
+                    className="bg-emerald-100 text-emerald-800 border-emerald-200"
+                  >
+                    {importRows.length} ready to import
+                  </Badge>
+                  {importErrors.length > 0 && (
+                    <Badge variant="outline" className="bg-red-100 text-red-800 border-red-200">
+                      {importErrors.length} row(s) skipped
+                    </Badge>
+                  )}
+                </div>
+
+                {importRows.length > 0 && (
+                  <div className="max-h-40 overflow-auto rounded-lg border border-slate-200">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Code</TableHead>
+                          <TableHead>Name</TableHead>
+                          <TableHead className="hidden sm:table-cell">Category</TableHead>
+                          <TableHead className="text-right">Price</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {importRows.slice(0, 50).map((t) => (
+                          <TableRow key={t.code}>
+                            <TableCell className="font-mono text-xs font-bold">{t.code}</TableCell>
+                            <TableCell className="text-sm">{t.name}</TableCell>
+                            <TableCell className="hidden text-sm text-slate-500 sm:table-cell">
+                              {t.category}
+                            </TableCell>
+                            <TableCell className="text-right text-sm">
+                              {formatCurrency(t.price)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+
+                {importErrors.length > 0 && (
+                  <div className="max-h-32 space-y-1 overflow-auto rounded-lg border border-red-200 bg-red-50 p-2">
+                    {importErrors.map((err, i) => (
+                      <p key={i} className="flex items-start gap-1.5 text-xs text-red-700">
+                        <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" /> {err}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setImportOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={runImport}
+              disabled={bulkInsert.isPending || importRows.length === 0}
+            >
+              {bulkInsert.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              Import {importRows.length || ''} Test{importRows.length === 1 ? '' : 's'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
