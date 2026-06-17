@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
+  Activity,
   AlertTriangle,
   ChevronLeft,
   ChevronRight,
@@ -49,6 +50,7 @@ const TITLES: Record<QueueMode, string> = {
   doctor: 'Doctor Queue',
   hr: 'HR Queue',
   restricted: 'Restricted (Admin)',
+  medical: 'Medical Service Queue',
   pathology: 'Pathology Queue',
 };
 
@@ -60,6 +62,8 @@ const ALL_STATUSES: RequestStatus[] = [
   'HR_RESTRICTED',
   'PENDING_ADMIN',
   'ADMIN_REJECTED',
+  'PENDING_MEDICAL',
+  'MEDICAL_REJECTED',
   'PENDING_PATHOLOGY',
   'PATH_PARTIAL',
   'COMPLETED',
@@ -71,6 +75,7 @@ const MODE_STATUSES: Record<QueueMode, RequestStatus[]> = {
   doctor: ['PENDING_DOCTOR'],
   hr: ['PENDING_HR', 'PENDING_HR_PARTIAL'],
   restricted: ['HR_RESTRICTED', 'PENDING_ADMIN'],
+  medical: ['PENDING_MEDICAL'],
   pathology: ['PENDING_PATHOLOGY', 'PATH_PARTIAL'],
 };
 
@@ -80,6 +85,7 @@ const EMPTY_CONFIG: Record<QueueMode, { icon: LucideIcon; title: string }> = {
   doctor: { icon: Stethoscope, title: 'No pending doctor reviews' },
   hr: { icon: Users, title: 'No pending HR approvals' },
   restricted: { icon: AlertTriangle, title: 'No restricted requests' },
+  medical: { icon: Activity, title: 'No pending medical service reviews' },
   pathology: { icon: Microscope, title: 'No pending pathology tests' },
 };
 

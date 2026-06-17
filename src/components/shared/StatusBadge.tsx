@@ -10,6 +10,8 @@ const STATUS_STYLES: Record<RequestStatus, string> = {
   PENDING_ADMIN: 'bg-orange-100 text-orange-800 border-orange-200',
   DOCTOR_REJECTED: 'bg-red-100 text-red-800 border-red-200',
   ADMIN_REJECTED: 'bg-red-100 text-red-800 border-red-200',
+  PENDING_MEDICAL: 'bg-cyan-100 text-cyan-800 border-cyan-200',
+  MEDICAL_REJECTED: 'bg-red-100 text-red-800 border-red-200',
   PENDING_PATHOLOGY: 'bg-violet-100 text-violet-800 border-violet-200',
   PATH_PARTIAL: 'bg-teal-100 text-teal-800 border-teal-200',
   COMPLETED: 'bg-emerald-100 text-emerald-800 border-emerald-200',

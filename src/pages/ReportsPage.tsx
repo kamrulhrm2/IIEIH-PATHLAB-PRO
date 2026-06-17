@@ -67,6 +67,8 @@ const STATUS_COLORS: Record<RequestStatus, string> = {
   PENDING_ADMIN: '#fb923c',
   DOCTOR_REJECTED: '#ef4444',
   ADMIN_REJECTED: '#dc2626',
+  PENDING_MEDICAL: '#06b6d4',
+  MEDICAL_REJECTED: '#dc2626',
   PENDING_PATHOLOGY: '#8b5cf6',
   PATH_PARTIAL: '#14b8a6',
   COMPLETED: '#10b981',

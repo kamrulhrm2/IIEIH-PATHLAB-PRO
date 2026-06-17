@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
+  Activity,
   AlertTriangle,
   CheckCircle2,
   ClipboardList,
@@ -149,6 +150,18 @@ export default function DashboardPage() {
           { label: 'My Completed', value: mine.filter((r) => r.status === 'COMPLETED').length, icon: CheckCircle2, accent: 'bg-emerald-100 text-emerald-700' },
           { label: 'Remaining Quota', value: remaining, icon: Gauge, accent: 'bg-violet-100 text-violet-700' },
         ];
+      case 'medical':
+        return [
+          {
+            label: 'Medical Service Queue',
+            value: count((r) => r.status === 'PENDING_MEDICAL'),
+            icon: Activity,
+            accent: 'bg-cyan-100 text-cyan-700',
+          },
+          { label: 'My Requests', value: mine.length, icon: ClipboardList, accent: 'bg-blue-100 text-blue-700' },
+          { label: 'My Completed', value: mine.filter((r) => r.status === 'COMPLETED').length, icon: CheckCircle2, accent: 'bg-emerald-100 text-emerald-700' },
+          { label: 'Remaining Quota', value: remaining, icon: Gauge, accent: 'bg-cyan-100 text-cyan-700' },
+        ];
       default:
         return [
           { label: 'My Requests', value: requests.length, icon: ClipboardList, accent: 'bg-blue-100 text-blue-700' },
@@ -164,7 +177,7 @@ export default function DashboardPage() {
     }
   }, [role, requests, employees, mine, remaining]);
 
-  const showQuotaCard = role === 'doctor' || role === 'pathologist' || role === 'user';
+  const showQuotaCard = role === 'doctor' || role === 'pathologist' || role === 'medical' || role === 'user';
   const quotaRatio = quotaLimit > 0 ? remaining / quotaLimit : 0;
   const quotaBarColor =
     quotaRatio <= 0 ? 'bg-red-500' : quotaRatio <= 0.4 ? 'bg-amber-500' : 'bg-emerald-500';

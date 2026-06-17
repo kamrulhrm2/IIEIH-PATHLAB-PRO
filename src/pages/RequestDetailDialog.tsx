@@ -49,7 +49,7 @@ const APPROVAL_STYLES: Record<TestApproval, string> = {
   completed: 'bg-emerald-100 text-emerald-800 border-emerald-200',
 };
 
-const STEPS = ['Created', 'Doctor', 'HR', 'Pathology', 'Done'];
+const STEPS = ['Created', 'Doctor', 'HR', 'Medical', 'Pathology', 'Done'];
 
 function deriveStep(status: RequestSummary['status']): { index: number; rejected: boolean } {
   switch (status) {
@@ -64,11 +64,15 @@ function deriveStep(status: RequestSummary['status']): { index: number; rejected
       return { index: 2, rejected: false };
     case 'ADMIN_REJECTED':
       return { index: 2, rejected: true };
+    case 'PENDING_MEDICAL':
+      return { index: 3, rejected: false };
+    case 'MEDICAL_REJECTED':
+      return { index: 3, rejected: true };
     case 'PENDING_PATHOLOGY':
     case 'PATH_PARTIAL':
-      return { index: 3, rejected: false };
+      return { index: 4, rejected: false };
     case 'COMPLETED':
-      return { index: 5, rejected: false };
+      return { index: 6, rejected: false };
   }
 }
 
@@ -102,6 +106,8 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
     (role === 'hr' || role === 'admin');
   const canAdminAct =
     !!request && (status === 'HR_RESTRICTED' || status === 'PENDING_ADMIN') && role === 'admin';
+  const canMedicalAct =
+    !!request && status === 'PENDING_MEDICAL' && (role === 'medical' || role === 'admin');
   const canPathAct =
     !!request &&
     (status === 'PENDING_PATHOLOGY' || status === 'PATH_PARTIAL') &&
@@ -216,7 +222,7 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
         request,
         stage: exceeded ? 'HR_RESTRICTED' : 'HR_APPROVED',
         updates: {
-          status: exceeded ? 'HR_RESTRICTED' : 'PENDING_PATHOLOGY',
+          status: exceeded ? 'HR_RESTRICTED' : 'PENDING_MEDICAL',
           hr_name: user!.name,
           hr_at: now(),
         },
@@ -254,6 +260,38 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
     );
   };
 
+  const handleMedicalApprove = () => {
+    action.mutate(
+      {
+        request,
+        stage: 'MEDICAL_APPROVED',
+        updates: {
+          status: 'PENDING_PATHOLOGY',
+          medical_name: user!.name,
+          medical_at: now(),
+        },
+        note,
+      },
+      { onSuccess: () => finish(`Medical Services approval recorded for ${request.req_no}`) }
+    );
+  };
+
+  const handleMedicalReject = () => {
+    action.mutate(
+      {
+        request,
+        stage: 'MEDICAL_REJECTED',
+        updates: {
+          status: 'MEDICAL_REJECTED',
+          medical_name: user!.name,
+          medical_at: now(),
+        },
+        note,
+      },
+      { onSuccess: () => finish(`Medical Services rejection recorded for ${request.req_no}`) }
+    );
+  };
+
   const handlePathComplete = () => {
     const approvedRows = tests.filter((t) => t.approval === 'approved');
     const completing = approvedRows.filter((t) => checked[t.id]);
@@ -285,7 +323,7 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
     );
   };
 
-  const hasAction = canDoctorAct || canHrAct || canAdminAct || canPathAct;
+  const hasAction = canDoctorAct || canHrAct || canAdminAct || canMedicalAct || canPathAct;
   const quotaColor =
     usage >= quotaLimit
       ? 'bg-red-500'
@@ -655,6 +693,18 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
                   <Button variant="success" onClick={() => handleAdmin(true)} disabled={action.isPending}>
                     {action.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
                     Override Approve
+                  </Button>
+                </>
+              )}
+              {canMedicalAct && (
+                <>
+                  <Button variant="destructive" onClick={handleMedicalReject} disabled={action.isPending}>
+                    {action.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                    Reject
+                  </Button>
+                  <Button variant="success" onClick={handleMedicalApprove} disabled={action.isPending}>
+                    {action.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                    Approve
                   </Button>
                 </>
               )}

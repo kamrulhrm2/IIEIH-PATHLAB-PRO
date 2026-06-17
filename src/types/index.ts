@@ -1,5 +1,5 @@
 export type EmpStatus = 'confirmed' | 'non-confirmed';
-export type UserRole = 'admin' | 'hr' | 'doctor' | 'pathologist' | 'user';
+export type UserRole = 'admin' | 'hr' | 'doctor' | 'pathologist' | 'medical' | 'user';
 export type RelationType = 'Self' | 'Spouse' | 'Father' | 'Mother' | 'Son' | 'Daughter';
 export type GenderType = 'Male' | 'Female' | 'Other';
 
@@ -11,6 +11,8 @@ export type RequestStatus =
   | 'HR_RESTRICTED'
   | 'PENDING_ADMIN'
   | 'ADMIN_REJECTED'
+  | 'PENDING_MEDICAL'
+  | 'MEDICAL_REJECTED'
   | 'PENDING_PATHOLOGY'
   | 'PATH_PARTIAL'
   | 'COMPLETED';
@@ -24,6 +26,8 @@ export type TimelineStage =
   | 'HR_RESTRICTED'
   | 'ADMIN_APPROVED'
   | 'ADMIN_REJECTED'
+  | 'MEDICAL_APPROVED'
+  | 'MEDICAL_REJECTED'
   | 'PATH_PARTIAL'
   | 'COMPLETED';
 
@@ -118,6 +122,8 @@ export interface PathRequest {
   hr_at: string | null;
   admin_name: string | null;
   admin_at: string | null;
+  medical_name: string | null;
+  medical_at: string | null;
   pathologist_name: string | null;
   pathologist_at: string | null;
   completed_at: string | null;
@@ -167,4 +173,4 @@ export interface EmployeeQuota {
   is_custom: boolean;
 }
 
-export type QueueMode = 'mine' | 'all' | 'doctor' | 'hr' | 'restricted' | 'pathology';
+export type QueueMode = 'mine' | 'all' | 'doctor' | 'hr' | 'restricted' | 'medical' | 'pathology';

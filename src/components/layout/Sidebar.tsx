@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
+  Activity,
   AlertTriangle,
   BarChart3,
   ClipboardList,
@@ -34,16 +35,17 @@ interface NavItem {
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'hr', 'doctor', 'pathologist', 'user'] },
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'hr', 'doctor', 'pathologist', 'medical', 'user'] },
   { to: '/requests/new', label: 'New Request', icon: FilePlus2, roles: ['admin', 'doctor', 'pathologist', 'user'] },
-  { to: '/requests/mine', label: 'My Requests', icon: ClipboardList, roles: ['admin', 'doctor', 'pathologist', 'user'] },
+  { to: '/requests/mine', label: 'My Requests', icon: ClipboardList, roles: ['admin', 'doctor', 'pathologist', 'medical', 'user'] },
   { to: '/requests/doctor', label: 'Doctor Queue', icon: Stethoscope, roles: ['admin', 'doctor'] },
   { to: '/requests/hr', label: 'HR Queue', icon: Users, roles: ['admin', 'hr'] },
   { to: '/requests/restricted', label: 'Restricted Queue', icon: AlertTriangle, roles: ['admin'] },
+  { to: '/requests/medical', label: 'Medical Service Queue', icon: Activity, roles: ['admin', 'medical'] },
   { to: '/requests/pathology', label: 'Pathology Queue', icon: Microscope, roles: ['admin', 'pathologist'] },
   { to: '/requests/all', label: 'All Requests', icon: FileText, roles: ['admin'] },
   { to: '/employees', label: 'Employees', icon: UserCheck, roles: ['admin', 'hr'] },
-  { to: '/dependents', label: 'Dependents', icon: Heart, roles: ['admin', 'hr', 'doctor', 'pathologist', 'user'] },
+  { to: '/dependents', label: 'Dependents', icon: Heart, roles: ['admin', 'hr', 'doctor', 'pathologist', 'medical', 'user'] },
   { to: '/tests', label: 'Test Library', icon: FlaskConical, roles: ['admin'] },
   { to: '/users', label: 'System Users', icon: Lock, roles: ['admin'] },
   { to: '/reports', label: 'Reports', icon: BarChart3, roles: ['admin'] },
