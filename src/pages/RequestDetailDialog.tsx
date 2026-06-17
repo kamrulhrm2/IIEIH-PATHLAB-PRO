@@ -72,7 +72,9 @@ function deriveStep(status: RequestSummary['status']): { index: number; rejected
     case 'PATH_PARTIAL':
       return { index: 4, rejected: false };
     case 'COMPLETED':
-      return { index: 6, rejected: false };
+      return { index: 5, rejected: false };
+    default:
+      return { index: 0, rejected: false };
   }
 }
 
