@@ -1,5 +1,15 @@
 import { useMemo, useState, type FormEvent } from 'react';
-import { FlaskConical, FolderPlus, Loader2, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
+import {
+  Download,
+  FlaskConical,
+  FolderPlus,
+  Loader2,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -33,6 +43,7 @@ import {
   useTestCategories,
   useTests,
 } from '@/hooks/useTests';
+import { downloadCsv } from '@/lib/csv';
 import { cn, formatCurrency } from '@/lib/utils';
 import type { LabTest } from '@/types';
 
@@ -92,6 +103,20 @@ export default function TestLibraryPage() {
     setInlineCategory(false);
     setNewCategoryName('');
     setDialogOpen(true);
+  };
+
+  const exportCsv = () => {
+    downloadCsv(
+      `tests-${new Date().toISOString().slice(0, 10)}.csv`,
+      ['Code', 'Name', 'Category', 'Price (BDT)', 'Status'],
+      filtered.map((t) => [
+        t.code,
+        t.name,
+        t.category,
+        t.price,
+        t.is_active ? 'Active' : 'Inactive',
+      ])
+    );
   };
 
   const openEdit = (t: LabTest) => {
@@ -183,16 +208,21 @@ export default function TestLibraryPage() {
         title="Test Library"
         subtitle={`${activeCount} pathology tests available`}
         actions={
-          canEdit ? (
-            <>
-              <Button variant="outline" onClick={openCategoryDialog}>
-                <FolderPlus className="h-4 w-4" /> New Category
-              </Button>
-              <Button onClick={openAdd}>
-                <Plus className="h-4 w-4" /> Add Test
-              </Button>
-            </>
-          ) : undefined
+          <>
+            <Button variant="outline" onClick={exportCsv} disabled={filtered.length === 0}>
+              <Download className="h-4 w-4" /> Export CSV
+            </Button>
+            {canEdit && (
+              <>
+                <Button variant="outline" onClick={openCategoryDialog}>
+                  <FolderPlus className="h-4 w-4" /> New Category
+                </Button>
+                <Button onClick={openAdd}>
+                  <Plus className="h-4 w-4" /> Add Test
+                </Button>
+              </>
+            )}
+          </>
         }
       />
 

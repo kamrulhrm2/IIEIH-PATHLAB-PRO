@@ -1,16 +1,19 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useMemo, useRef, useState, type FormEvent } from 'react';
 import {
+  AlertTriangle,
   Check,
   ChevronLeft,
   ChevronRight,
   Clock,
   Download,
+  FileDown,
   Gauge,
   Loader2,
   Pencil,
   Plus,
   Search,
   Trash2,
+  Upload,
   UserCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -48,13 +51,15 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { useAuth } from '@/context/AuthContext';
 import {
+  useBulkInsertEmployees,
   useDeleteEmployee,
   useEmployees,
   useSaveEmployee,
   useSetEmployeesQuota,
+  type NewEmployee,
 } from '@/hooks/useEmployees';
 import { useQuotaLimit } from '@/hooks/useSettings';
-import { downloadCsv } from '@/lib/csv';
+import { downloadCsv, parseCsv } from '@/lib/csv';
 import { cn, formatDate } from '@/lib/utils';
 import type { EmpStatus, Employee } from '@/types';
 
@@ -104,6 +109,14 @@ export default function EmployeesPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkQuota, setBulkQuota] = useState('');
+
+  // CSV bulk import
+  const bulkInsert = useBulkInsertEmployees();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importFileName, setImportFileName] = useState('');
+  const [importRows, setImportRows] = useState<NewEmployee[]>([]);
+  const [importErrors, setImportErrors] = useState<string[]>([]);
 
   const confirmed = employees.filter((e) => e.status === 'confirmed').length;
   const effectiveQuota = (e: Employee) => e.quota_override ?? defaultLimit;
@@ -275,6 +288,125 @@ export default function EmployeesPage() {
     );
   };
 
+  // ---- CSV bulk import ----
+  const IMPORT_COLUMNS = [
+    'emp_code',
+    'name',
+    'designation',
+    'department',
+    'status',
+    'join_date',
+    'contact',
+    'quota_override',
+  ];
+
+  const downloadTemplate = () => {
+    downloadCsv('employee-import-template.csv', IMPORT_COLUMNS, [
+      ['E101', 'John Doe', 'Officer', 'Production', 'confirmed', '2024-01-15', '01700000000', ''],
+      ['E102', 'Jane Smith', 'Executive', 'Finance', 'non-confirmed', '', '', '8'],
+    ]);
+  };
+
+  const openImport = () => {
+    setImportFileName('');
+    setImportRows([]);
+    setImportErrors([]);
+    setImportOpen(true);
+  };
+
+  const handleFile = async (file: File) => {
+    setImportFileName(file.name);
+    setImportRows([]);
+    setImportErrors([]);
+
+    const grid = parseCsv(await file.text());
+    if (grid.length < 2) {
+      setImportErrors(['The file is empty or has no data rows below the header.']);
+      return;
+    }
+
+    const header = grid[0].map((h) => h.trim().toLowerCase());
+    const col = (name: string) => header.indexOf(name);
+    const iCode = col('emp_code');
+    const iName = col('name');
+    if (iCode === -1 || iName === -1) {
+      setImportErrors([
+        'Missing required columns. The header row must include at least "emp_code" and "name". Download the template for the exact format.',
+      ]);
+      return;
+    }
+    const iDesig = col('designation');
+    const iDept = col('department');
+    const iStatus = col('status');
+    const iJoin = col('join_date');
+    const iContact = col('contact');
+    const iQuota = col('quota_override');
+
+    const existing = new Set(employees.map((e) => e.emp_code));
+    const seen = new Set<string>();
+    const valid: NewEmployee[] = [];
+    const errors: string[] = [];
+    const cell = (r: string[], i: number) => (i >= 0 ? (r[i] ?? '').trim() : '');
+
+    grid.slice(1).forEach((r, idx) => {
+      const line = idx + 2; // account for header + 1-based
+      const code = cell(r, iCode).toUpperCase();
+      const name = cell(r, iName);
+
+      if (!code) return errors.push(`Row ${line}: employee code is required.`);
+      if (!/^[A-Z0-9]{1,20}$/.test(code))
+        return errors.push(`Row ${line}: code "${code}" must be alphanumeric (max 20 chars).`);
+      if (name.length < 2) return errors.push(`Row ${line}: name is required (min 2 characters).`);
+      if (existing.has(code))
+        return errors.push(`Row ${line}: code ${code} already exists in the system.`);
+      if (seen.has(code)) return errors.push(`Row ${line}: code ${code} is duplicated in the file.`);
+
+      const status: EmpStatus = cell(r, iStatus).toLowerCase() === 'confirmed' ? 'confirmed' : 'non-confirmed';
+
+      let join_date: string | null = null;
+      const j = cell(r, iJoin);
+      if (j) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(j))
+          return errors.push(`Row ${line}: join_date "${j}" must be in YYYY-MM-DD format.`);
+        join_date = j;
+      }
+
+      let quota_override: number | null = null;
+      const q = cell(r, iQuota);
+      if (q) {
+        const n = parseInt(q, 10);
+        if (!Number.isInteger(n) || n < 0)
+          return errors.push(`Row ${line}: quota_override "${q}" must be a whole number (0 or more).`);
+        quota_override = n;
+      }
+
+      seen.add(code);
+      valid.push({
+        emp_code: code,
+        name,
+        designation: cell(r, iDesig) || null,
+        department: cell(r, iDept) || null,
+        status,
+        join_date,
+        contact: cell(r, iContact) || null,
+        quota_override,
+      });
+    });
+
+    setImportRows(valid);
+    setImportErrors(errors);
+  };
+
+  const runImport = () => {
+    if (importRows.length === 0) return;
+    bulkInsert.mutate(importRows, {
+      onSuccess: (count) => {
+        toast.success(`Imported ${count} employee${count === 1 ? '' : 's'} successfully`);
+        setImportOpen(false);
+      },
+    });
+  };
+
   return (
     <div>
       <PageHeader
@@ -284,6 +416,9 @@ export default function EmployeesPage() {
           <>
             <Button variant="outline" onClick={exportCsv} disabled={filtered.length === 0}>
               <Download className="h-4 w-4" /> Export CSV
+            </Button>
+            <Button variant="outline" onClick={openImport}>
+              <Upload className="h-4 w-4" /> Import CSV
             </Button>
             <Button onClick={openAdd}>
               <Plus className="h-4 w-4" /> Add Employee
@@ -650,6 +785,124 @@ export default function EmployeesPage() {
               </div>
             </DialogFooter>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* CSV bulk import dialog */}
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Import Employees from CSV</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+              <p>
+                Upload a <span className="font-medium">.csv</span> file with a header row. Required
+                columns: <span className="font-mono font-semibold">emp_code</span>,{' '}
+                <span className="font-mono font-semibold">name</span>. Optional:{' '}
+                <span className="font-mono">designation, department, status, join_date, contact,
+                quota_override</span>.
+              </p>
+              <Button
+                type="button"
+                variant="link"
+                className="mt-1 h-auto p-0 text-blue-600"
+                onClick={downloadTemplate}
+              >
+                <FileDown className="h-4 w-4" /> Download template
+              </Button>
+            </div>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleFile(f);
+                e.target.value = '';
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full justify-start font-normal text-slate-600"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className="h-4 w-4" /> {importFileName || 'Choose CSV file…'}
+            </Button>
+
+            {(importRows.length > 0 || importErrors.length > 0) && (
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <Badge
+                    variant="outline"
+                    className="bg-emerald-100 text-emerald-800 border-emerald-200"
+                  >
+                    {importRows.length} ready to import
+                  </Badge>
+                  {importErrors.length > 0 && (
+                    <Badge variant="outline" className="bg-red-100 text-red-800 border-red-200">
+                      {importErrors.length} row(s) skipped
+                    </Badge>
+                  )}
+                </div>
+
+                {importRows.length > 0 && (
+                  <div className="max-h-40 overflow-auto rounded-lg border border-slate-200">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Code</TableHead>
+                          <TableHead>Name</TableHead>
+                          <TableHead className="hidden sm:table-cell">Department</TableHead>
+                          <TableHead>Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {importRows.slice(0, 50).map((r) => (
+                          <TableRow key={r.emp_code}>
+                            <TableCell className="font-mono text-xs font-bold">
+                              {r.emp_code}
+                            </TableCell>
+                            <TableCell className="text-sm">{r.name}</TableCell>
+                            <TableCell className="hidden text-sm text-slate-500 sm:table-cell">
+                              {r.department ?? '—'}
+                            </TableCell>
+                            <TableCell className="text-xs">{r.status}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+
+                {importErrors.length > 0 && (
+                  <div className="max-h-32 space-y-1 overflow-auto rounded-lg border border-red-200 bg-red-50 p-2">
+                    {importErrors.map((err, i) => (
+                      <p key={i} className="flex items-start gap-1.5 text-xs text-red-700">
+                        <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" /> {err}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setImportOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={runImport}
+              disabled={bulkInsert.isPending || importRows.length === 0}
+            >
+              {bulkInsert.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              Import {importRows.length || ''} Employee{importRows.length === 1 ? '' : 's'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

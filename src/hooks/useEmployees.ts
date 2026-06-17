@@ -36,6 +36,24 @@ export function useSaveEmployee() {
   });
 }
 
+export type NewEmployee = Omit<Employee, 'id' | 'created_at' | 'updated_at'>;
+
+/** Insert many employees at once (CSV bulk import). */
+export function useBulkInsertEmployees() {
+  return useMutation({
+    mutationFn: async (rows: NewEmployee[]) => {
+      const { error } = await supabase.from('employees').insert(rows);
+      if (error) throw error;
+      return rows.length;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['employees'] });
+      queryClient.invalidateQueries({ queryKey: ['quota'] });
+    },
+    onError: (e: Error) => toast.error(`Bulk import failed — ${e.message}`),
+  });
+}
+
 /** Set (or clear) the quota override for one or many employees. null = use global default. */
 export function useSetEmployeesQuota() {
   return useMutation({
