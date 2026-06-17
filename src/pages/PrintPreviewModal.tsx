@@ -347,10 +347,23 @@ export default function PrintPreviewModal({ request, tests, onClose }: PrintPrev
               marginBottom: 12,
             }}
           >
-            <div>
-              <div style={{ fontSize: 18, fontWeight: 800, color: '#0f172a' }}>PathLab Pro</div>
-              <div style={{ fontSize: 10, color: '#64748b' }}>
-                Employee Health Benefit Programme
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {/* Logo */}
+              <svg width="50" height="50" viewBox="0 0 50 50" style={{ flexShrink: 0 }}>
+                <rect width="50" height="50" rx="8" fill="#0f172a" />
+                <g transform="translate(25, 25)">
+                  {/* Medical cross */}
+                  <rect x="-3" y="-12" width="6" height="24" fill="#fff" />
+                  <rect x="-12" y="-3" width="24" height="6" fill="#fff" />
+                  {/* Circle background */}
+                  <circle cx="0" cy="0" r="16" fill="none" stroke="#06b6d4" strokeWidth="1.5" />
+                </g>
+              </svg>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: '#0f172a' }}>PathLab Pro</div>
+                <div style={{ fontSize: 10, color: '#64748b' }}>
+                  Employee Health Benefit Programme
+                </div>
               </div>
             </div>
             <div style={{ textAlign: 'right' }}>
