@@ -75,9 +75,13 @@ export function useSetEmployeesQuota() {
 
 export function useDeleteEmployee() {
   return useMutation({
-    mutationFn: async (id: string) => {
+    mutationFn: async ({ id, empCode }: { id: string; empCode: string }) => {
+      // Removing the employee cascades their dependents + requests (FK ON DELETE CASCADE).
       const { error } = await supabase.from('employees').delete().eq('id', id);
       if (error) throw error;
+      // The login account links to the employee only by emp_code (no FK), so remove it here.
+      const { error: userError } = await supabase.from('users').delete().eq('emp_code', empCode);
+      if (userError) throw userError;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['employees'] });

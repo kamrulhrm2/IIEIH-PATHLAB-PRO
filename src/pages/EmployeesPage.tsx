@@ -909,16 +909,19 @@ export default function EmployeesPage() {
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
         title={`Delete ${deleting?.name ?? ''}?`}
-        description="This will also remove their login account and dependents."
+        description="This permanently removes the employee along with their login account, dependents, and all of their request history. This cannot be undone."
         loading={remove.isPending}
         onConfirm={() =>
           deleting &&
-          remove.mutate(deleting.id, {
-            onSuccess: () => {
-              toast.success('Employee deleted');
-              setDeleting(null);
-            },
-          })
+          remove.mutate(
+            { id: deleting.id, empCode: deleting.emp_code },
+            {
+              onSuccess: () => {
+                toast.success('Employee deleted');
+                setDeleting(null);
+              },
+            }
+          )
         }
       />
     </div>
