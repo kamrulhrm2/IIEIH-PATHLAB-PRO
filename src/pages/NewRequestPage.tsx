@@ -55,12 +55,18 @@ export default function NewRequestPage() {
   const isAdmin = user!.role === 'admin';
   const ownEmployee = employees.find((e) => e.emp_code === user!.emp_code);
 
-  // Employee role: auto-select own record
+  // Non-admin users can only see themselves
+  const visibleEmployees = useMemo(
+    () => (isAdmin ? confirmedEmployees : (ownEmployee ? [ownEmployee] : [])),
+    [isAdmin, confirmedEmployees, ownEmployee]
+  );
+
+  // Auto-select own record for non-admin users
   useEffect(() => {
-    if (isEmployeeRole && ownEmployee && !employeeId) {
+    if (!isAdmin && ownEmployee && !employeeId) {
       setEmployeeId(ownEmployee.id);
     }
-  }, [isEmployeeRole, ownEmployee, employeeId]);
+  }, [isAdmin, ownEmployee, employeeId]);
 
   const selectedEmployee = employees.find((e) => e.id === employeeId) ?? null;
   const { data: dependents = [] } = useDependents(selectedEmployee?.emp_code ?? null);
@@ -179,7 +185,7 @@ export default function NewRequestPage() {
             <>
               <div className="space-y-1.5">
                 <Label>Employee *</Label>
-                {isEmployeeRole ? (
+                {!isAdmin ? (
                   <Input
                     readOnly
                     value={
@@ -191,7 +197,7 @@ export default function NewRequestPage() {
                   />
                 ) : (
                   <SearchableSelect
-                    options={confirmedEmployees.map((e) => ({
+                    options={visibleEmployees.map((e) => ({
                       value: e.id,
                       label: `${e.emp_code} — ${e.name}`,
                       sub: [e.department, e.designation].filter(Boolean).join(' · '),

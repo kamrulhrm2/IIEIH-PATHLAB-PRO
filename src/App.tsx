@@ -68,7 +68,7 @@ export default function App() {
         <Route
           path="/requests/new"
           element={
-            <Protected roles={['admin', 'doctor', 'pathologist', 'medical', 'user']}>
+            <Protected>
               <NewRequestPage />
             </Protected>
           }
