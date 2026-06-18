@@ -157,64 +157,81 @@ export default function PrintPreviewModal({ request, tests, onClose }: PrintPrev
 
   const handleDownloadPdf = async () => {
     setBusy('pdf');
+    const filename = `${slipName}.pdf`;
+
     try {
-      console.log('[PDF] Starting PDF generation...');
+      console.log('[PDF] Starting generation...');
       const pdf = await generatePdf(slipName);
-      const pdfDataUrl = pdf.output('datauristring');
-      const filename = `${slipName}.pdf`;
+      console.log('[PDF] Generated successfully');
 
-      console.log('[PDF] Generated successfully, attempting server download...');
-
-      // Try server-based download first (saves to Downloads folder)
-      let serverSuccess = false;
+      // PRIMARY METHOD: jsPDF.save() - Most reliable, works in ALL browsers
+      // This directly triggers browser download to user's default Downloads folder
       try {
-        const response = await fetch('http://localhost:5000/api/download', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            filename,
-            pdfData: pdfDataUrl,
-          }),
-          timeout: 30000,
-        });
+        console.log('[DOWNLOAD] Using jsPDF.save() - direct download');
+        pdf.save(filename);
+        console.log('[DOWNLOAD] ✅ Success - File saved to browser Downloads folder');
+        toast.success(`✅ ${filename} downloaded to Downloads folder`);
 
-        if (!response.ok) {
-          console.error(`[SERVER] HTTP ${response.status}: ${response.statusText}`);
-          throw new Error(`Server returned ${response.status}`);
+        // OPTIONAL: Also try server-based copy if available (silent backup)
+        try {
+          const pdfDataUrl = pdf.output('datauristring');
+          fetch('http://localhost:5000/api/download', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename, pdfData: pdfDataUrl }),
+          }).then(r => r.json()).then(result => {
+            if (result.success) {
+              console.log('[SERVER] ✅ Bonus: Also saved to Windows Downloads folder');
+            }
+          }).catch(() => {
+            // Silent fail - jsPDF.save() already worked
+          });
+        } catch {
+          // Silent fail - jsPDF.save() already worked
         }
 
-        const result = await response.json();
-        if (result.success) {
-          console.log('[SERVER] Download successful:', result.path);
-          toast.success(`✅ PDF saved to Downloads: ${filename}`);
-          serverSuccess = true;
-          return;
-        } else {
-          console.error('[SERVER] Download failed:', result.error);
-          throw new Error(result.error || 'Server rejected download');
-        }
-      } catch (serverError) {
-        console.warn('[SERVER] Not available or failed, using browser fallback...', serverError);
-        if (serverSuccess) return; // If server succeeded, don't do fallback
+        return;
+      } catch (saveError) {
+        console.warn('[DOWNLOAD] jsPDF.save() failed, trying blob fallback', saveError);
       }
 
-      // Fallback: Browser download if server not available
-      console.log('[FALLBACK] Using browser download...');
-      const blob = pdf.output('blob');
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 1500);
-      console.log('[FALLBACK] Download initiated via browser');
-      toast.success(`✅ PDF downloaded: ${filename} (check browser downloads folder)`);
+      // FALLBACK METHOD 1: Blob download via anchor element
+      try {
+        console.log('[FALLBACK 1] Using Blob URL download');
+        const blob = pdf.output('blob');
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        console.log('[FALLBACK 1] ✅ Success');
+        toast.success(`✅ ${filename} downloaded`);
+        return;
+      } catch (blobError) {
+        console.warn('[FALLBACK 1] Blob download failed', blobError);
+      }
+
+      // FALLBACK METHOD 2: Open PDF in new tab
+      try {
+        console.log('[FALLBACK 2] Opening PDF in new tab');
+        const blob = pdf.output('blob');
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+        toast.success(`✅ PDF opened in new tab - Use Ctrl+S to save`);
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        return;
+      } catch (openError) {
+        console.error('[FALLBACK 2] Open in tab failed', openError);
+        throw new Error('All download methods failed');
+      }
     } catch (e) {
       const errorMsg = (e as Error).message;
-      console.error('[FATAL ERROR]', errorMsg);
-      toast.error(`❌ PDF generation failed: ${errorMsg}`);
+      console.error('[ERROR]', errorMsg);
+      toast.error(`❌ Download failed: ${errorMsg}. Try right-clicking the slip and "Save As".`);
     } finally {
       setBusy(null);
     }
@@ -223,8 +240,28 @@ export default function PrintPreviewModal({ request, tests, onClose }: PrintPrev
   // Open the system print dialog (lists all local printers; user can also "Save as PDF").
   const handlePrint = () => {
     setBusy('print');
-    if (!printViaIframe(slipName)) doPrint(); // fallback to in-page print isolation
-    setTimeout(() => setBusy(null), 1000);
+    try {
+      console.log('[PRINT] Starting print process...');
+
+      // PRIMARY METHOD: iframe-based print (cleanest)
+      if (printViaIframe(slipName)) {
+        console.log('[PRINT] ✅ Using iframe print method');
+        toast.success('🖨️ Print dialog opening...');
+        setTimeout(() => setBusy(null), 2000);
+        return;
+      }
+
+      // FALLBACK METHOD: Direct window.print() with CSS isolation
+      console.log('[PRINT] iframe failed, using window.print() fallback');
+      doPrint();
+      toast.success('🖨️ Print dialog opening...');
+      setTimeout(() => setBusy(null), 2000);
+    } catch (e) {
+      const errorMsg = (e as Error).message;
+      console.error('[PRINT ERROR]', errorMsg);
+      toast.error(`❌ Print failed: ${errorMsg}. Use Ctrl+P as alternative.`);
+      setBusy(null);
+    }
   };
 
   return (
