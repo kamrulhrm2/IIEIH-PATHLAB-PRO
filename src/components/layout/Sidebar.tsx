@@ -36,7 +36,7 @@ interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'hr', 'doctor', 'pathologist', 'medical', 'user'] },
-  { to: '/requests/new', label: 'New Request', icon: FilePlus2, roles: ['admin', 'doctor', 'pathologist', 'user'] },
+  { to: '/requests/new', label: 'New Request', icon: FilePlus2, roles: ['admin', 'doctor', 'pathologist', 'medical', 'user'] },
   { to: '/requests/mine', label: 'My Requests', icon: ClipboardList, roles: ['admin', 'doctor', 'pathologist', 'medical', 'user'] },
   { to: '/requests/doctor', label: 'Doctor Queue', icon: Stethoscope, roles: ['admin', 'doctor'] },
   { to: '/requests/hr', label: 'HR Queue', icon: Users, roles: ['admin', 'hr'] },
