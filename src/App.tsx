@@ -68,7 +68,7 @@ export default function App() {
         <Route
           path="/requests/new"
           element={
-            <Protected roles={['admin', 'doctor', 'pathologist', 'user']}>
+            <Protected roles={['admin', 'doctor', 'pathologist', 'medical', 'user']}>
               <NewRequestPage />
             </Protected>
           }
@@ -76,7 +76,7 @@ export default function App() {
         <Route
           path="/requests/mine"
           element={
-            <Protected roles={['admin', 'doctor', 'pathologist', 'user']}>
+            <Protected roles={['admin', 'doctor', 'pathologist', 'medical', 'user']}>
               <RequestsPage mode="mine" />
             </Protected>
           }

@@ -1,0 +1,24 @@
+-- Migration: Enable Medical Services role to create and view requests
+-- ==================================================================
+-- Issue: Medical Services users could not create or view their own requests
+-- Root Cause: App routes /requests/new and /requests/mine were restricted to ['admin', 'doctor', 'pathologist', 'user']
+-- Solution: Added 'medical' role to these protected routes
+--
+-- Medical Services Role Permissions After This Migration:
+-- ✅ Create new requests
+-- ✅ View their own requests (My Requests)
+-- ✅ Access Medical Service Queue (review/approve requests)
+-- ✅ Dashboard access
+-- ✅ Dependents management
+--
+-- Database Schema Already Supports Medical Services:
+-- ✅ requests.requester_role can store 'medical'
+-- ✅ requests.medical_name, requests.medical_at exist
+-- ✅ RLS policy 'app_all_access' allows all authenticated users INSERT/SELECT/UPDATE/DELETE
+-- ✅ request_timeline stages include MEDICAL_APPROVED and MEDICAL_REJECTED
+--
+-- Users Table Constraint:
+-- ✅ users.role CHECK constraint includes 'medical'
+--
+-- No database changes needed - all schema already supports Medical Services
+-- Frontend route protection was the only blocker
