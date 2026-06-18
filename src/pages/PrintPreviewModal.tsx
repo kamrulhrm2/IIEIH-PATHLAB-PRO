@@ -158,11 +158,15 @@ export default function PrintPreviewModal({ request, tests, onClose }: PrintPrev
   const handleDownloadPdf = async () => {
     setBusy('pdf');
     try {
+      console.log('[PDF] Starting PDF generation...');
       const pdf = await generatePdf(slipName);
       const pdfDataUrl = pdf.output('datauristring');
       const filename = `${slipName}.pdf`;
 
+      console.log('[PDF] Generated successfully, attempting server download...');
+
       // Try server-based download first (saves to Downloads folder)
+      let serverSuccess = false;
       try {
         const response = await fetch('http://localhost:5000/api/download', {
           method: 'POST',
@@ -171,18 +175,31 @@ export default function PrintPreviewModal({ request, tests, onClose }: PrintPrev
             filename,
             pdfData: pdfDataUrl,
           }),
+          timeout: 30000,
         });
+
+        if (!response.ok) {
+          console.error(`[SERVER] HTTP ${response.status}: ${response.statusText}`);
+          throw new Error(`Server returned ${response.status}`);
+        }
 
         const result = await response.json();
         if (result.success) {
-          toast.success(`PDF downloaded to Downloads folder: ${filename}`);
+          console.log('[SERVER] Download successful:', result.path);
+          toast.success(`✅ PDF saved to Downloads: ${filename}`);
+          serverSuccess = true;
           return;
+        } else {
+          console.error('[SERVER] Download failed:', result.error);
+          throw new Error(result.error || 'Server rejected download');
         }
       } catch (serverError) {
-        console.warn('Download server not available, using browser download', serverError);
+        console.warn('[SERVER] Not available or failed, using browser fallback...', serverError);
+        if (serverSuccess) return; // If server succeeded, don't do fallback
       }
 
       // Fallback: Browser download if server not available
+      console.log('[FALLBACK] Using browser download...');
       const blob = pdf.output('blob');
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -192,9 +209,12 @@ export default function PrintPreviewModal({ request, tests, onClose }: PrintPrev
       a.click();
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 1500);
-      toast.success(`PDF downloaded: ${filename}`);
+      console.log('[FALLBACK] Download initiated via browser');
+      toast.success(`✅ PDF downloaded: ${filename} (check browser downloads folder)`);
     } catch (e) {
-      toast.error(`Could not generate PDF — ${(e as Error).message}`);
+      const errorMsg = (e as Error).message;
+      console.error('[FATAL ERROR]', errorMsg);
+      toast.error(`❌ PDF generation failed: ${errorMsg}`);
     } finally {
       setBusy(null);
     }

@@ -49,7 +49,9 @@ app.post('/api/download', async (req, res) => {
   try {
     const { filename, pdfData } = req.body;
 
+    // Validation
     if (!filename || !pdfData) {
+      console.error('[VALIDATION ERROR] Missing filename or pdfData');
       return res.status(400).json({
         success: false,
         error: 'Missing filename or pdfData'
@@ -59,6 +61,7 @@ app.post('/api/download', async (req, res) => {
     // Validate filename
     const sanitizedFilename = path.basename(filename);
     if (!sanitizedFilename.endsWith('.pdf')) {
+      console.error('[VALIDATION ERROR] Invalid filename - must be a PDF:', filename);
       return res.status(400).json({
         success: false,
         error: 'Invalid filename - must be a PDF'
@@ -68,27 +71,60 @@ app.post('/api/download', async (req, res) => {
     const downloadsFolder = getDownloadsFolder();
     const filepath = path.join(downloadsFolder, sanitizedFilename);
 
-    console.log(`[DOWNLOAD] Saving PDF: ${sanitizedFilename}`);
-    console.log(`[PATH] ${filepath}`);
+    console.log(`[DOWNLOAD] Processing: ${sanitizedFilename}`);
+    console.log(`[DESTINATION] ${filepath}`);
+    console.log(`[DATA LENGTH] ${pdfData.length} characters`);
+
+    // Extract base64 from data URL
+    let base64String = pdfData;
+
+    // Handle data URL format: data:application/pdf;base64,xxxxx
+    if (pdfData.includes('data:')) {
+      const matches = pdfData.match(/data:[^;]+;base64,(.+)/);
+      if (!matches || !matches[1]) {
+        console.error('[ERROR] Invalid data URL format');
+        throw new Error('Invalid PDF data format - expected data URL');
+      }
+      base64String = matches[1];
+    }
 
     // Convert base64 to buffer
-    const buffer = Buffer.from(pdfData.replace(/^data:application\/pdf;base64,/, ''), 'base64');
+    let buffer;
+    try {
+      buffer = Buffer.from(base64String, 'base64');
+      console.log(`[BUFFER] Created ${buffer.length} bytes`);
+    } catch (err) {
+      console.error('[BUFFER ERROR]', err.message);
+      throw new Error(`Invalid base64 data - ${err.message}`);
+    }
+
+    // Verify buffer is valid PDF
+    if (buffer.length < 4 || !buffer.toString('utf8', 0, 4).includes('%PDF')) {
+      console.warn('[WARNING] Buffer may not be a valid PDF');
+    }
 
     // Write to file
-    await fs.writeFile(filepath, buffer);
-
-    console.log(`[SUCCESS] PDF saved to Downloads folder`);
+    try {
+      await fs.writeFile(filepath, buffer);
+      console.log(`[SUCCESS] PDF saved successfully`);
+      console.log(`[FILE SIZE] ${buffer.length} bytes`);
+    } catch (writeErr) {
+      console.error('[WRITE ERROR]', writeErr.message);
+      throw new Error(`Failed to write file - ${writeErr.message}`);
+    }
 
     res.json({
       success: true,
       message: `PDF saved to Downloads folder: ${sanitizedFilename}`,
-      path: filepath
+      path: filepath,
+      size: buffer.length
     });
   } catch (error) {
-    console.error('[ERROR]', error.message);
+    console.error('[FATAL ERROR]', error.message);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
+      timestamp: new Date().toISOString()
     });
   }
 });
