@@ -7,14 +7,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/context/AuthContext';
 
-const DEMO_ACCOUNTS = [
-  { code: 'E000', role: 'Admin' },
-  { code: 'E001', role: 'Employee' },
-  { code: 'E002', role: 'Doctor' },
-  { code: 'E003', role: 'HR' },
-  { code: 'E004', role: 'Pathologist' },
-];
-
 export default function LoginPage() {
   const { user, login } = useAuth();
   const navigate = useNavigate();
@@ -101,28 +93,6 @@ export default function LoginPage() {
               Sign In
             </Button>
           </form>
-
-          <div className="mt-6">
-            <p className="mb-2 text-center text-xs font-medium uppercase tracking-wide text-slate-400">
-              Demo accounts (password = Employee ID)
-            </p>
-            <div className="grid grid-cols-5 gap-1.5">
-              {DEMO_ACCOUNTS.map((acc) => (
-                <button
-                  key={acc.code}
-                  type="button"
-                  onClick={() => {
-                    setUsername(acc.code);
-                    setPassword(acc.code);
-                  }}
-                  className="rounded-lg border border-slate-200 bg-slate-50 px-1 py-2 text-center transition-colors hover:border-slate-300 hover:bg-white"
-                >
-                  <span className="block font-mono text-xs font-bold text-slate-900">{acc.code}</span>
-                  <span className="block text-[10px] text-slate-500">{acc.role}</span>
-                </button>
-              ))}
-            </div>
-          </div>
         </CardContent>
       </Card>
     </div>
