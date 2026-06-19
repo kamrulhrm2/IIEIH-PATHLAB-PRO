@@ -4,15 +4,64 @@ import { supabase } from '@/lib/supabase';
 import { queryClient } from '@/lib/queryClient';
 import type { Employee } from '@/types';
 
+/**
+ * Fetches ALL employees from Supabase using pagination.
+ * Supabase default limit is 1000 rows per query - we paginate to get everything.
+ * Supports up to 100,000+ employees reliably.
+ */
+const FETCH_PAGE_SIZE = 1000;
+
 export function useEmployees() {
   return useQuery({
     queryKey: ['employees'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('employees').select('*').order('emp_code');
-      if (error) throw error;
-      return data as Employee[];
+      const allEmployees: Employee[] = [];
+      let from = 0;
+      let hasMore = true;
+
+      // Paginate through ALL employees
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('employees')
+          .select('*')
+          .order('emp_code')
+          .range(from, from + FETCH_PAGE_SIZE - 1);
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          allEmployees.push(...(data as Employee[]));
+          from += FETCH_PAGE_SIZE;
+          // If we got less than full page, we're done
+          hasMore = data.length === FETCH_PAGE_SIZE;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      console.log(`[useEmployees] Fetched ${allEmployees.length} total employees`);
+      return allEmployees;
     },
     staleTime: 60_000,
+  });
+}
+
+/**
+ * Lightweight hook for getting just the total employee count.
+ * More efficient than useEmployees() if you only need the count.
+ */
+export function useEmployeeCount() {
+  return useQuery({
+    queryKey: ['employee-count'],
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from('employees')
+        .select('*', { count: 'exact', head: true });
+
+      if (error) throw error;
+      return count ?? 0;
+    },
+    staleTime: 30_000,
   });
 }
 
@@ -30,6 +79,7 @@ export function useSaveEmployee() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['employees'] });
+      queryClient.invalidateQueries({ queryKey: ['employee-count'] });
       queryClient.invalidateQueries({ queryKey: ['quota'] });
     },
     onError: (e: Error) => toast.error(`Failed to save employee — ${e.message}`),
@@ -152,6 +202,7 @@ export function useBulkInsertEmployees() {
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['employees'] });
+      queryClient.invalidateQueries({ queryKey: ['employee-count'] });
       queryClient.invalidateQueries({ queryKey: ['quota'] });
 
       const failed = result.failedBatches ?? 0;
@@ -190,6 +241,7 @@ export function useSetEmployeesQuota() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['employees'] });
+      queryClient.invalidateQueries({ queryKey: ['employee-count'] });
       queryClient.invalidateQueries({ queryKey: ['quota'] });
       queryClient.invalidateQueries({ queryKey: ['usage'] });
     },

@@ -4,15 +4,42 @@ import { supabase } from '@/lib/supabase';
 import { queryClient } from '@/lib/queryClient';
 import type { Dependent } from '@/types';
 
+/**
+ * Fetches dependents with pagination to bypass Supabase's 1000-row default limit.
+ * If empCode is provided, filters to that employee's dependents.
+ */
+const DEPENDENTS_PAGE_SIZE = 1000;
+
 export function useDependents(empCode?: string | null) {
   return useQuery({
     queryKey: ['dependents', empCode ?? 'all'],
     queryFn: async () => {
-      let q = supabase.from('dependents').select('*').order('name');
-      if (empCode) q = q.eq('emp_code', empCode);
-      const { data, error } = await q;
-      if (error) throw error;
-      return data as Dependent[];
+      const allDependents: Dependent[] = [];
+      let from = 0;
+      let hasMore = true;
+
+      while (hasMore) {
+        let q = supabase
+          .from('dependents')
+          .select('*')
+          .order('name')
+          .range(from, from + DEPENDENTS_PAGE_SIZE - 1);
+
+        if (empCode) q = q.eq('emp_code', empCode);
+
+        const { data, error } = await q;
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          allDependents.push(...(data as Dependent[]));
+          from += DEPENDENTS_PAGE_SIZE;
+          hasMore = data.length === DEPENDENTS_PAGE_SIZE;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      return allDependents;
     },
     staleTime: 60_000,
   });

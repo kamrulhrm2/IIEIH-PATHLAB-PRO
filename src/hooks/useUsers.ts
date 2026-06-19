@@ -4,13 +4,38 @@ import { supabase } from '@/lib/supabase';
 import { queryClient } from '@/lib/queryClient';
 import type { AppUser, UserRole } from '@/types';
 
+/**
+ * Fetches ALL users with pagination to bypass Supabase's 1000-row default limit.
+ */
+const USERS_PAGE_SIZE = 1000;
+
 export function useUsers() {
   return useQuery({
     queryKey: ['users'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('users').select('*').order('username');
-      if (error) throw error;
-      return data as AppUser[];
+      const allUsers: AppUser[] = [];
+      let from = 0;
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('users')
+          .select('*')
+          .order('username')
+          .range(from, from + USERS_PAGE_SIZE - 1);
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          allUsers.push(...(data as AppUser[]));
+          from += USERS_PAGE_SIZE;
+          hasMore = data.length === USERS_PAGE_SIZE;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      return allUsers;
     },
   });
 }

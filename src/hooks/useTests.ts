@@ -4,15 +4,41 @@ import { supabase } from '@/lib/supabase';
 import { queryClient } from '@/lib/queryClient';
 import type { LabTest, TestCategory } from '@/types';
 
+/**
+ * Fetches ALL tests with pagination to bypass Supabase's 1000-row default limit.
+ */
+const TESTS_PAGE_SIZE = 1000;
+
 export function useTests(includeInactive = false) {
   return useQuery({
     queryKey: ['tests', includeInactive],
     queryFn: async () => {
-      let q = supabase.from('tests').select('*').order('code');
-      if (!includeInactive) q = q.eq('is_active', true);
-      const { data, error } = await q;
-      if (error) throw error;
-      return data as LabTest[];
+      const allTests: LabTest[] = [];
+      let from = 0;
+      let hasMore = true;
+
+      while (hasMore) {
+        let q = supabase
+          .from('tests')
+          .select('*')
+          .order('code')
+          .range(from, from + TESTS_PAGE_SIZE - 1);
+
+        if (!includeInactive) q = q.eq('is_active', true);
+
+        const { data, error } = await q;
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          allTests.push(...(data as LabTest[]));
+          from += TESTS_PAGE_SIZE;
+          hasMore = data.length === TESTS_PAGE_SIZE;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      return allTests;
     },
     staleTime: 60_000,
   });

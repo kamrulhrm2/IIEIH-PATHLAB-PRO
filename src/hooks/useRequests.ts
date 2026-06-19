@@ -16,6 +16,11 @@ import type {
   TimelineStage,
 } from '@/types';
 
+/**
+ * Fetches request list with pagination to bypass Supabase's 1000-row default limit.
+ */
+const REQUESTS_PAGE_SIZE = 1000;
+
 export function useRequestList(mode: QueueMode) {
   const { user } = useAuth();
   return useQuery({
@@ -23,23 +28,40 @@ export function useRequestList(mode: QueueMode) {
     enabled: !!user,
     staleTime: 10_000,
     queryFn: async () => {
-      let q = supabase
-        .from('vw_request_summary')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (mode === 'mine') q = q.eq('requester_id', user!.id);
-      else if (mode === 'doctor') {
-        q = q.eq('status', 'PENDING_DOCTOR');
-        // A doctor sees only requests assigned to them; admin sees every pending review.
-        if (user!.role === 'doctor') q = q.eq('assigned_doctor_id', user!.id);
+      const allRequests: RequestSummary[] = [];
+      let from = 0;
+      let hasMore = true;
+
+      while (hasMore) {
+        let q = supabase
+          .from('vw_request_summary')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .range(from, from + REQUESTS_PAGE_SIZE - 1);
+
+        if (mode === 'mine') q = q.eq('requester_id', user!.id);
+        else if (mode === 'doctor') {
+          q = q.eq('status', 'PENDING_DOCTOR');
+          if (user!.role === 'doctor') q = q.eq('assigned_doctor_id', user!.id);
+        }
+        else if (mode === 'hr') q = q.in('status', ['PENDING_HR', 'PENDING_HR_PARTIAL']);
+        else if (mode === 'restricted') q = q.in('status', ['HR_RESTRICTED', 'PENDING_ADMIN']);
+        else if (mode === 'medical') q = q.eq('status', 'PENDING_MEDICAL');
+        else if (mode === 'pathology') q = q.in('status', ['PENDING_PATHOLOGY', 'PATH_PARTIAL']);
+
+        const { data, error } = await q;
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          allRequests.push(...(data as RequestSummary[]));
+          from += REQUESTS_PAGE_SIZE;
+          hasMore = data.length === REQUESTS_PAGE_SIZE;
+        } else {
+          hasMore = false;
+        }
       }
-      else if (mode === 'hr') q = q.in('status', ['PENDING_HR', 'PENDING_HR_PARTIAL']);
-      else if (mode === 'restricted') q = q.in('status', ['HR_RESTRICTED', 'PENDING_ADMIN']);
-      else if (mode === 'medical') q = q.eq('status', 'PENDING_MEDICAL');
-      else if (mode === 'pathology') q = q.in('status', ['PENDING_PATHOLOGY', 'PATH_PARTIAL']);
-      const { data, error } = await q;
-      if (error) throw error;
-      return data as RequestSummary[];
+
+      return allRequests;
     },
   });
 }
