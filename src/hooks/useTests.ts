@@ -37,10 +37,19 @@ export function useSaveTest() {
 
 export type NewLabTest = Omit<LabTest, 'id' | 'created_at' | 'updated_at'>;
 
-/** Insert many tests at once (CSV bulk import); auto-creates any missing categories. */
+/**
+ * Bulk import tests from CSV with intelligent duplicate handling.
+ * - Auto-creates missing categories
+ * - UPSERT by code: New tests inserted, existing tests updated
+ * - Returns counts for user feedback
+ */
 export function useBulkInsertTests() {
   return useMutation({
     mutationFn: async (rows: NewLabTest[]) => {
+      if (rows.length === 0) {
+        return { total: 0, inserted: 0, updated: 0 };
+      }
+
       // Make sure every referenced category exists so it shows in dropdowns/filters.
       const categories = [...new Set(rows.map((r) => r.category).filter(Boolean))];
       if (categories.length > 0) {
@@ -52,15 +61,56 @@ export function useBulkInsertTests() {
           });
         if (catError) throw catError;
       }
-      const { error } = await supabase.from('tests').insert(rows);
+
+      // Check existing tests by code
+      const testCodes = rows.map((r) => r.code);
+      const { data: existing, error: fetchError } = await supabase
+        .from('tests')
+        .select('code')
+        .in('code', testCodes);
+
+      if (fetchError) {
+        throw new Error(`Failed to check existing tests: ${fetchError.message}`);
+      }
+
+      const existingCodes = new Set((existing ?? []).map((t) => t.code));
+      const insertCount = rows.filter((r) => !existingCodes.has(r.code)).length;
+      const updateCount = rows.filter((r) => existingCodes.has(r.code)).length;
+
+      // UPSERT - Insert new tests, update existing ones by code
+      const { error } = await supabase.from('tests').upsert(rows, {
+        onConflict: 'code',
+        ignoreDuplicates: false,
+      });
+
       if (error) throw error;
-      return rows.length;
+
+      return {
+        total: rows.length,
+        inserted: insertCount,
+        updated: updateCount,
+      };
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['tests'] });
       queryClient.invalidateQueries({ queryKey: ['test-categories'] });
+
+      if (result.inserted > 0 && result.updated > 0) {
+        toast.success(
+          `✅ Import complete: ${result.inserted} new + ${result.updated} updated = ${result.total} total`
+        );
+      } else if (result.inserted > 0) {
+        toast.success(`✅ ${result.inserted} new tests imported successfully`);
+      } else if (result.updated > 0) {
+        toast.success(`✅ ${result.updated} existing tests updated successfully`);
+      } else {
+        toast.success(`✅ Import processed: ${result.total} records`);
+      }
     },
-    onError: (e: Error) => toast.error(`Bulk import failed — ${e.message}`),
+    onError: (e: Error) => {
+      console.error('[BULK IMPORT ERROR]', e);
+      toast.error(`❌ Bulk import failed — ${e.message}`);
+    },
   });
 }
 

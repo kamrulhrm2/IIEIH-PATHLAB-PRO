@@ -221,9 +221,11 @@ export default function TestLibraryPage() {
   const runImport = () => {
     if (importRows.length === 0) return;
     bulkInsert.mutate(importRows, {
-      onSuccess: (count) => {
-        toast.success(`Imported ${count} test${count === 1 ? '' : 's'} successfully`);
+      onSuccess: () => {
+        // Detailed toast is shown by the mutation's onSuccess handler in useBulkInsertTests
         setImportOpen(false);
+        setImportRows([]);
+        setImportErrors([]);
       },
     });
   };

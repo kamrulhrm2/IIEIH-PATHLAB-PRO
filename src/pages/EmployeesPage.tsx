@@ -395,9 +395,12 @@ export default function EmployeesPage() {
   const runImport = () => {
     if (importRows.length === 0) return;
     bulkInsert.mutate(importRows, {
-      onSuccess: (count) => {
-        toast.success(`Imported ${count} employee${count === 1 ? '' : 's'} successfully`);
+      onSuccess: () => {
+        // Detailed toast is shown by the mutation's onSuccess handler in useBulkInsertEmployees
         setImportOpen(false);
+        setImportRows([]);
+        setImportErrors([]);
+        setImportFileName('');
       },
     });
   };

@@ -38,19 +38,74 @@ export function useSaveEmployee() {
 
 export type NewEmployee = Omit<Employee, 'id' | 'created_at' | 'updated_at'>;
 
-/** Insert many employees at once (CSV bulk import). */
+/**
+ * Bulk import employees from CSV with intelligent duplicate handling.
+ * - New employees: Inserted as new records
+ * - Existing employees (by emp_code): Updated with new data (UPSERT)
+ * - Returns counts of inserted vs updated for user feedback
+ */
 export function useBulkInsertEmployees() {
   return useMutation({
     mutationFn: async (rows: NewEmployee[]) => {
-      const { error } = await supabase.from('employees').insert(rows);
-      if (error) throw error;
-      return rows.length;
+      if (rows.length === 0) {
+        return { total: 0, inserted: 0, updated: 0, skipped: 0 };
+      }
+
+      // Step 1: Fetch all existing emp_codes to determine inserts vs updates
+      const empCodes = rows.map((r) => r.emp_code);
+      const { data: existing, error: fetchError } = await supabase
+        .from('employees')
+        .select('emp_code')
+        .in('emp_code', empCodes);
+
+      if (fetchError) {
+        throw new Error(`Failed to check existing employees: ${fetchError.message}`);
+      }
+
+      const existingCodes = new Set((existing ?? []).map((e) => e.emp_code));
+      const insertCount = rows.filter((r) => !existingCodes.has(r.emp_code)).length;
+      const updateCount = rows.filter((r) => existingCodes.has(r.emp_code)).length;
+
+      // Step 2: UPSERT - Insert new records, update existing ones by emp_code
+      const { error: upsertError } = await supabase
+        .from('employees')
+        .upsert(rows, {
+          onConflict: 'emp_code',
+          ignoreDuplicates: false,
+        });
+
+      if (upsertError) {
+        throw new Error(upsertError.message);
+      }
+
+      return {
+        total: rows.length,
+        inserted: insertCount,
+        updated: updateCount,
+        skipped: 0,
+      };
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['employees'] });
       queryClient.invalidateQueries({ queryKey: ['quota'] });
+
+      // Provide detailed feedback to user
+      if (result.inserted > 0 && result.updated > 0) {
+        toast.success(
+          `✅ Import complete: ${result.inserted} new + ${result.updated} updated = ${result.total} total`
+        );
+      } else if (result.inserted > 0) {
+        toast.success(`✅ ${result.inserted} new employees imported successfully`);
+      } else if (result.updated > 0) {
+        toast.success(`✅ ${result.updated} existing employees updated successfully`);
+      } else {
+        toast.success(`✅ Import processed: ${result.total} records`);
+      }
     },
-    onError: (e: Error) => toast.error(`Bulk import failed — ${e.message}`),
+    onError: (e: Error) => {
+      console.error('[BULK IMPORT ERROR]', e);
+      toast.error(`❌ Bulk import failed — ${e.message}`);
+    },
   });
 }
 
