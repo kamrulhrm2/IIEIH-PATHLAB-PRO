@@ -39,16 +39,28 @@ export type NewLabTest = Omit<LabTest, 'id' | 'created_at' | 'updated_at'>;
 
 /**
  * Bulk import tests from CSV with intelligent duplicate handling.
+ * Supports UNLIMITED rows via chunking (500 per batch).
  * - Auto-creates missing categories
  * - UPSERT by code: New tests inserted, existing tests updated
- * - Returns counts for user feedback
  */
+const TESTS_CHUNK_SIZE = 500;
+
+function chunkTests<T>(arr: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
 export function useBulkInsertTests() {
   return useMutation({
     mutationFn: async (rows: NewLabTest[]) => {
       if (rows.length === 0) {
-        return { total: 0, inserted: 0, updated: 0 };
+        return { total: 0, inserted: 0, updated: 0, processed: 0, failedBatches: 0 };
       }
+
+      console.log(`[TESTS BULK IMPORT] Starting import of ${rows.length} tests`);
 
       // Make sure every referenced category exists so it shows in dropdowns/filters.
       const categories = [...new Set(rows.map((r) => r.category).filter(Boolean))];
@@ -62,38 +74,82 @@ export function useBulkInsertTests() {
         if (catError) throw catError;
       }
 
-      // Check existing tests by code
+      // Check existing tests by code in chunks
       const testCodes = rows.map((r) => r.code);
-      const { data: existing, error: fetchError } = await supabase
-        .from('tests')
-        .select('code')
-        .in('code', testCodes);
+      const existingCodes = new Set<string>();
+      const codeChunks = chunkTests(testCodes, TESTS_CHUNK_SIZE);
 
-      if (fetchError) {
-        throw new Error(`Failed to check existing tests: ${fetchError.message}`);
+      for (let i = 0; i < codeChunks.length; i++) {
+        const { data: existing, error: fetchError } = await supabase
+          .from('tests')
+          .select('code')
+          .in('code', codeChunks[i]);
+
+        if (fetchError) {
+          throw new Error(
+            `Failed to check existing tests (chunk ${i + 1}/${codeChunks.length}): ${fetchError.message}`
+          );
+        }
+
+        (existing ?? []).forEach((t) => existingCodes.add(t.code));
       }
 
-      const existingCodes = new Set((existing ?? []).map((t) => t.code));
       const insertCount = rows.filter((r) => !existingCodes.has(r.code)).length;
       const updateCount = rows.filter((r) => existingCodes.has(r.code)).length;
 
-      // UPSERT - Insert new tests, update existing ones by code
-      const { error } = await supabase.from('tests').upsert(rows, {
-        onConflict: 'code',
-        ignoreDuplicates: false,
-      });
+      // UPSERT in chunks for unlimited row support
+      const rowChunks = chunkTests(rows, TESTS_CHUNK_SIZE);
+      console.log(`[TESTS BULK IMPORT] Processing ${rowChunks.length} upsert chunks...`);
 
-      if (error) throw error;
+      let processedCount = 0;
+      const errors: string[] = [];
+
+      for (let i = 0; i < rowChunks.length; i++) {
+        const batchNum = i + 1;
+        try {
+          const { error } = await supabase.from('tests').upsert(rowChunks[i], {
+            onConflict: 'code',
+            ignoreDuplicates: false,
+          });
+
+          if (error) {
+            console.error(`[CHUNK ${batchNum}] Error:`, error.message);
+            errors.push(`Batch ${batchNum}: ${error.message}`);
+          } else {
+            processedCount += rowChunks[i].length;
+            console.log(
+              `[CHUNK ${batchNum}/${rowChunks.length}] ✅ Processed ${rowChunks[i].length} rows`
+            );
+          }
+        } catch (err) {
+          const msg = (err as Error).message;
+          errors.push(`Batch ${batchNum}: ${msg}`);
+        }
+      }
+
+      if (processedCount === 0 && errors.length > 0) {
+        throw new Error(`All batches failed: ${errors[0]}`);
+      }
 
       return {
         total: rows.length,
         inserted: insertCount,
         updated: updateCount,
+        processed: processedCount,
+        failedBatches: errors.length,
       };
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['tests'] });
       queryClient.invalidateQueries({ queryKey: ['test-categories'] });
+
+      const failed = result.failedBatches ?? 0;
+      if (failed > 0) {
+        toast.warning(
+          `⚠️ Partial import: ${result.processed}/${result.total} tests. ${failed} batch(es) failed.`
+        );
+        return;
+      }
 
       if (result.inserted > 0 && result.updated > 0) {
         toast.success(

@@ -337,7 +337,8 @@ export default function EmployeesPage() {
     const iContact = col('contact');
     const iQuota = col('quota_override');
 
-    const existing = new Set(employees.map((e) => e.emp_code));
+    // Note: We allow existing emp_codes - they will be UPDATED via UPSERT
+    // Only file-internal duplicates are rejected
     const seen = new Set<string>();
     const valid: NewEmployee[] = [];
     const errors: string[] = [];
@@ -352,8 +353,6 @@ export default function EmployeesPage() {
       if (!/^[A-Z0-9]{1,20}$/.test(code))
         return errors.push(`Row ${line}: code "${code}" must be alphanumeric (max 20 chars).`);
       if (name.length < 2) return errors.push(`Row ${line}: name is required (min 2 characters).`);
-      if (existing.has(code))
-        return errors.push(`Row ${line}: code ${code} already exists in the system.`);
       if (seen.has(code)) return errors.push(`Row ${line}: code ${code} is duplicated in the file.`);
 
       const status: EmpStatus = cell(r, iStatus).toLowerCase() === 'confirmed' ? 'confirmed' : 'non-confirmed';

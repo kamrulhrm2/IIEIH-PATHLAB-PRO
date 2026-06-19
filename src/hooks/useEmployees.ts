@@ -40,57 +40,126 @@ export type NewEmployee = Omit<Employee, 'id' | 'created_at' | 'updated_at'>;
 
 /**
  * Bulk import employees from CSV with intelligent duplicate handling.
- * - New employees: Inserted as new records
- * - Existing employees (by emp_code): Updated with new data (UPSERT)
- * - Returns counts of inserted vs updated for user feedback
+ * Supports UNLIMITED rows by chunking:
+ *  - Existence check: 500 codes per query (avoids URL length limits)
+ *  - UPSERT: 500 rows per batch (avoids timeout, payload size limits)
+ *  - Total: Can handle 10,000+ employees reliably
+ *
+ * Behavior:
+ *  - New employees (by emp_code): INSERTED
+ *  - Existing employees (by emp_code): UPDATED with new CSV data
  */
+const CHUNK_SIZE = 500;
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
 export function useBulkInsertEmployees() {
   return useMutation({
     mutationFn: async (rows: NewEmployee[]) => {
       if (rows.length === 0) {
-        return { total: 0, inserted: 0, updated: 0, skipped: 0 };
+        return { total: 0, inserted: 0, updated: 0 };
       }
 
-      // Step 1: Fetch all existing emp_codes to determine inserts vs updates
+      console.log(`[BULK IMPORT] Starting import of ${rows.length} employees`);
+
+      // Step 1: Check existing emp_codes in chunks (avoids URL/query limits)
       const empCodes = rows.map((r) => r.emp_code);
-      const { data: existing, error: fetchError } = await supabase
-        .from('employees')
-        .select('emp_code')
-        .in('emp_code', empCodes);
+      const existingCodes = new Set<string>();
 
-      if (fetchError) {
-        throw new Error(`Failed to check existing employees: ${fetchError.message}`);
+      const codeChunks = chunk(empCodes, CHUNK_SIZE);
+      console.log(`[BULK IMPORT] Checking existence in ${codeChunks.length} chunks...`);
+
+      for (let i = 0; i < codeChunks.length; i++) {
+        const { data: existing, error: fetchError } = await supabase
+          .from('employees')
+          .select('emp_code')
+          .in('emp_code', codeChunks[i]);
+
+        if (fetchError) {
+          throw new Error(
+            `Failed to check existing employees (chunk ${i + 1}/${codeChunks.length}): ${fetchError.message}`
+          );
+        }
+
+        (existing ?? []).forEach((e) => existingCodes.add(e.emp_code));
       }
 
-      const existingCodes = new Set((existing ?? []).map((e) => e.emp_code));
       const insertCount = rows.filter((r) => !existingCodes.has(r.emp_code)).length;
       const updateCount = rows.filter((r) => existingCodes.has(r.emp_code)).length;
 
-      // Step 2: UPSERT - Insert new records, update existing ones by emp_code
-      const { error: upsertError } = await supabase
-        .from('employees')
-        .upsert(rows, {
-          onConflict: 'emp_code',
-          ignoreDuplicates: false,
-        });
+      console.log(
+        `[BULK IMPORT] Pre-check complete: ${insertCount} new, ${updateCount} existing`
+      );
 
-      if (upsertError) {
-        throw new Error(upsertError.message);
+      // Step 2: UPSERT in chunks to handle unlimited row counts
+      const rowChunks = chunk(rows, CHUNK_SIZE);
+      console.log(`[BULK IMPORT] Processing ${rowChunks.length} upsert chunks...`);
+
+      let processedCount = 0;
+      const errors: string[] = [];
+
+      for (let i = 0; i < rowChunks.length; i++) {
+        const batchNum = i + 1;
+        try {
+          const { error: upsertError } = await supabase
+            .from('employees')
+            .upsert(rowChunks[i], {
+              onConflict: 'emp_code',
+              ignoreDuplicates: false,
+            });
+
+          if (upsertError) {
+            console.error(`[CHUNK ${batchNum}] Error:`, upsertError.message);
+            errors.push(`Batch ${batchNum}: ${upsertError.message}`);
+          } else {
+            processedCount += rowChunks[i].length;
+            console.log(
+              `[CHUNK ${batchNum}/${rowChunks.length}] ✅ Processed ${rowChunks[i].length} rows (${processedCount}/${rows.length} total)`
+            );
+          }
+        } catch (err) {
+          const msg = (err as Error).message;
+          console.error(`[CHUNK ${batchNum}] Exception:`, msg);
+          errors.push(`Batch ${batchNum}: ${msg}`);
+        }
+      }
+
+      // If all chunks failed, throw error
+      if (processedCount === 0 && errors.length > 0) {
+        throw new Error(`All batches failed: ${errors[0]}`);
+      }
+
+      // If some chunks failed, warn but continue
+      if (errors.length > 0) {
+        console.warn(
+          `[BULK IMPORT] Partial success: ${processedCount}/${rows.length} processed. ${errors.length} batches failed.`
+        );
       }
 
       return {
         total: rows.length,
         inserted: insertCount,
         updated: updateCount,
-        skipped: 0,
+        processed: processedCount,
+        failedBatches: errors.length,
       };
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['employees'] });
       queryClient.invalidateQueries({ queryKey: ['quota'] });
 
-      // Provide detailed feedback to user
-      if (result.inserted > 0 && result.updated > 0) {
+      const failed = result.failedBatches ?? 0;
+      if (failed > 0) {
+        toast.warning(
+          `⚠️ Partially imported: ${result.processed}/${result.total} records. ${failed} batch(es) failed - check console.`
+        );
+      } else if (result.inserted > 0 && result.updated > 0) {
         toast.success(
           `✅ Import complete: ${result.inserted} new + ${result.updated} updated = ${result.total} total`
         );
