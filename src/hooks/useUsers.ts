@@ -107,6 +107,70 @@ export function useUpdateUser() {
   });
 }
 
+/**
+ * Bulk update user roles for employees by their emp_codes.
+ * Only updates EXISTING user accounts - skips employees without accounts.
+ * Returns counts: updated (had account, role changed), skipped (no account).
+ */
+export function useBulkUpdateUserRole() {
+  return useMutation({
+    mutationFn: async ({ empCodes, role }: { empCodes: string[]; role: UserRole }) => {
+      if (empCodes.length === 0) {
+        return { updated: 0, skipped: 0, total: 0 };
+      }
+
+      // Step 1: Find which emp_codes have user accounts (chunked to avoid limits)
+      const CHUNK = 500;
+      const existingUsernames = new Set<string>();
+      for (let i = 0; i < empCodes.length; i += CHUNK) {
+        const slice = empCodes.slice(i, i + CHUNK);
+        const { data, error } = await supabase
+          .from('users')
+          .select('username')
+          .in('username', slice);
+        if (error) throw error;
+        (data ?? []).forEach((u) => existingUsernames.add(u.username));
+      }
+
+      const toUpdate = empCodes.filter((c) => existingUsernames.has(c));
+      const skipped = empCodes.length - toUpdate.length;
+
+      if (toUpdate.length === 0) {
+        return { updated: 0, skipped, total: empCodes.length };
+      }
+
+      // Step 2: Update roles in chunks
+      for (let i = 0; i < toUpdate.length; i += CHUNK) {
+        const slice = toUpdate.slice(i, i + CHUNK);
+        const { error } = await supabase
+          .from('users')
+          .update({ role })
+          .in('username', slice);
+        if (error) throw error;
+      }
+
+      return { updated: toUpdate.length, skipped, total: empCodes.length };
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      queryClient.invalidateQueries({ queryKey: ['doctors'] });
+
+      if (result.updated > 0 && result.skipped > 0) {
+        toast.success(
+          `✅ ${result.updated} user role(s) updated · ⚠️ ${result.skipped} skipped (no account)`
+        );
+      } else if (result.updated > 0) {
+        toast.success(`✅ ${result.updated} user role(s) updated successfully`);
+      } else if (result.skipped > 0) {
+        toast.warning(
+          `⚠️ No roles updated — ${result.skipped} selected employee(s) have no user account`
+        );
+      }
+    },
+    onError: (e: Error) => toast.error(`Failed to update roles — ${e.message}`),
+  });
+}
+
 /** Self-service password change — any logged-in user can change their own password. */
 export function useChangePassword() {
   return useMutation({

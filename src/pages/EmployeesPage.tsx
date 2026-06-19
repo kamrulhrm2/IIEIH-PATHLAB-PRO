@@ -2,18 +2,22 @@ import { useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   AlertTriangle,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
   FileDown,
+  Filter,
   Gauge,
   Loader2,
   Pencil,
   Plus,
   Search,
+  Shield,
   Trash2,
   Upload,
   UserCheck,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
@@ -29,6 +33,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
   SelectContent,
@@ -59,9 +64,10 @@ import {
   type NewEmployee,
 } from '@/hooks/useEmployees';
 import { useQuotaLimit } from '@/hooks/useSettings';
+import { useBulkUpdateUserRole } from '@/hooks/useUsers';
 import { downloadCsv, parseCsv } from '@/lib/csv';
 import { cn, formatDate } from '@/lib/utils';
-import type { EmpStatus, Employee } from '@/types';
+import type { EmpStatus, Employee, UserRole } from '@/types';
 
 const PAGE_SIZE = 15;
 
@@ -99,6 +105,8 @@ export default function EmployeesPage() {
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [selectedDepartments, setSelectedDepartments] = useState<Set<string>>(new Set());
+  const [selectedDesignations, setSelectedDesignations] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -109,6 +117,11 @@ export default function EmployeesPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkQuota, setBulkQuota] = useState('');
+
+  // Bulk role assignment
+  const bulkRole = useBulkUpdateUserRole();
+  const [roleOpen, setRoleOpen] = useState(false);
+  const [bulkRoleValue, setBulkRoleValue] = useState<UserRole>('user');
 
   // CSV bulk import
   const bulkInsert = useBulkInsertEmployees();
@@ -121,18 +134,78 @@ export default function EmployeesPage() {
   const confirmed = employees.filter((e) => e.status === 'confirmed').length;
   const effectiveQuota = (e: Employee) => e.quota_override ?? defaultLimit;
 
+  // Build unique departments and designations lists (alphabetically sorted)
+  const allDepartments = useMemo(() => {
+    const set = new Set<string>();
+    employees.forEach((e) => {
+      if (e.department?.trim()) set.add(e.department.trim());
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [employees]);
+
+  const allDesignations = useMemo(() => {
+    const set = new Set<string>();
+    employees.forEach((e) => {
+      if (e.designation?.trim()) set.add(e.designation.trim());
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [employees]);
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
     return employees.filter((e) => {
       if (statusFilter !== 'all' && e.status !== statusFilter) return false;
+      // Department filter (OR within, AND with other filters)
+      if (selectedDepartments.size > 0) {
+        const dept = (e.department ?? '').trim();
+        if (!selectedDepartments.has(dept)) return false;
+      }
+      // Designation filter (OR within, AND with other filters)
+      if (selectedDesignations.size > 0) {
+        const desig = (e.designation ?? '').trim();
+        if (!selectedDesignations.has(desig)) return false;
+      }
       if (!q) return true;
       return (
         e.emp_code.toLowerCase().includes(q) ||
         e.name.toLowerCase().includes(q) ||
-        (e.department ?? '').toLowerCase().includes(q)
+        (e.department ?? '').toLowerCase().includes(q) ||
+        (e.designation ?? '').toLowerCase().includes(q)
       );
     });
-  }, [employees, search, statusFilter]);
+  }, [employees, search, statusFilter, selectedDepartments, selectedDesignations]);
+
+  const toggleDepartment = (dept: string) => {
+    setSelectedDepartments((prev) => {
+      const next = new Set(prev);
+      next.has(dept) ? next.delete(dept) : next.add(dept);
+      return next;
+    });
+    setPage(1);
+  };
+
+  const toggleDesignation = (desig: string) => {
+    setSelectedDesignations((prev) => {
+      const next = new Set(prev);
+      next.has(desig) ? next.delete(desig) : next.add(desig);
+      return next;
+    });
+    setPage(1);
+  };
+
+  const clearAllFilters = () => {
+    setSelectedDepartments(new Set());
+    setSelectedDesignations(new Set());
+    setStatusFilter('all');
+    setSearch('');
+    setPage(1);
+  };
+
+  const hasActiveFilters =
+    search.trim() !== '' ||
+    statusFilter !== 'all' ||
+    selectedDepartments.size > 0 ||
+    selectedDesignations.size > 0;
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
@@ -198,6 +271,26 @@ export default function EmployeesPage() {
           );
           setBulkOpen(false);
           setBulkQuota('');
+          setSelectedIds(new Set());
+        },
+      }
+    );
+  };
+
+  const applyBulkRole = () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    // Get emp_codes from selected employees
+    const empCodes = employees
+      .filter((e) => selectedIds.has(e.id))
+      .map((e) => e.emp_code);
+    if (empCodes.length === 0) return;
+
+    bulkRole.mutate(
+      { empCodes, role: bulkRoleValue },
+      {
+        onSuccess: () => {
+          setRoleOpen(false);
           setSelectedIds(new Set());
         },
       }
@@ -437,7 +530,7 @@ export default function EmployeesPage() {
               setSearch(e.target.value);
               setPage(1);
             }}
-            placeholder="Search code, name, department..."
+            placeholder="Search code, name, dept, designation..."
             className="pl-8"
           />
         </div>
@@ -457,7 +550,188 @@ export default function EmployeesPage() {
             <SelectItem value="non-confirmed">Non-Confirmed</SelectItem>
           </SelectContent>
         </Select>
+
+        {/* Department Multi-Select Filter */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" className="gap-1.5">
+              <Filter className="h-3.5 w-3.5" />
+              Department
+              {selectedDepartments.size > 0 && (
+                <Badge variant="outline" className="ml-1 h-5 bg-slate-900 text-white">
+                  {selectedDepartments.size}
+                </Badge>
+              )}
+              <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-64 p-0" align="start">
+            <div className="border-b border-slate-100 px-3 py-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Filter by Department
+              </p>
+              <p className="mt-0.5 text-xs text-slate-400">
+                {selectedDepartments.size === 0
+                  ? 'Showing all departments'
+                  : `${selectedDepartments.size} selected`}
+              </p>
+            </div>
+            <div className="max-h-64 overflow-y-auto p-2">
+              {allDepartments.length === 0 && (
+                <p className="px-2 py-3 text-center text-xs text-slate-400">
+                  No departments found
+                </p>
+              )}
+              {allDepartments.map((dept) => (
+                <label
+                  key={dept}
+                  className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-slate-100"
+                >
+                  <Checkbox
+                    checked={selectedDepartments.has(dept)}
+                    onCheckedChange={() => toggleDepartment(dept)}
+                  />
+                  <span className="flex-1 truncate">{dept}</span>
+                </label>
+              ))}
+            </div>
+            {selectedDepartments.size > 0 && (
+              <div className="border-t border-slate-100 p-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full text-xs"
+                  onClick={() => {
+                    setSelectedDepartments(new Set());
+                    setPage(1);
+                  }}
+                >
+                  <X className="h-3 w-3" /> Clear department filter
+                </Button>
+              </div>
+            )}
+          </PopoverContent>
+        </Popover>
+
+        {/* Designation Multi-Select Filter */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" className="gap-1.5">
+              <Filter className="h-3.5 w-3.5" />
+              Designation
+              {selectedDesignations.size > 0 && (
+                <Badge variant="outline" className="ml-1 h-5 bg-slate-900 text-white">
+                  {selectedDesignations.size}
+                </Badge>
+              )}
+              <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-64 p-0" align="start">
+            <div className="border-b border-slate-100 px-3 py-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Filter by Designation
+              </p>
+              <p className="mt-0.5 text-xs text-slate-400">
+                {selectedDesignations.size === 0
+                  ? 'Showing all designations'
+                  : `${selectedDesignations.size} selected`}
+              </p>
+            </div>
+            <div className="max-h-64 overflow-y-auto p-2">
+              {allDesignations.length === 0 && (
+                <p className="px-2 py-3 text-center text-xs text-slate-400">
+                  No designations found
+                </p>
+              )}
+              {allDesignations.map((desig) => (
+                <label
+                  key={desig}
+                  className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-slate-100"
+                >
+                  <Checkbox
+                    checked={selectedDesignations.has(desig)}
+                    onCheckedChange={() => toggleDesignation(desig)}
+                  />
+                  <span className="flex-1 truncate">{desig}</span>
+                </label>
+              ))}
+            </div>
+            {selectedDesignations.size > 0 && (
+              <div className="border-t border-slate-100 p-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full text-xs"
+                  onClick={() => {
+                    setSelectedDesignations(new Set());
+                    setPage(1);
+                  }}
+                >
+                  <X className="h-3 w-3" /> Clear designation filter
+                </Button>
+              </div>
+            )}
+          </PopoverContent>
+        </Popover>
+
+        {hasActiveFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-slate-500"
+            onClick={clearAllFilters}
+          >
+            <X className="h-3.5 w-3.5" /> Clear all
+          </Button>
+        )}
+
+        <div className="ml-auto text-xs text-slate-500">
+          {filtered.length === employees.length
+            ? `${employees.length} employees`
+            : `${filtered.length} of ${employees.length}`}
+        </div>
       </div>
+
+      {/* Active Filter Pills */}
+      {(selectedDepartments.size > 0 || selectedDesignations.size > 0) && (
+        <div className="mb-3 flex flex-wrap items-center gap-1.5">
+          {[...selectedDepartments].map((d) => (
+            <Badge
+              key={`d-${d}`}
+              variant="outline"
+              className="gap-1 bg-blue-50 text-blue-700 border-blue-200"
+            >
+              <span className="text-xs">Dept: {d}</span>
+              <button
+                type="button"
+                onClick={() => toggleDepartment(d)}
+                className="hover:text-red-600"
+                aria-label={`Remove department ${d}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          ))}
+          {[...selectedDesignations].map((d) => (
+            <Badge
+              key={`des-${d}`}
+              variant="outline"
+              className="gap-1 bg-purple-50 text-purple-700 border-purple-200"
+            >
+              <span className="text-xs">Title: {d}</span>
+              <button
+                type="button"
+                onClick={() => toggleDesignation(d)}
+                className="hover:text-red-600"
+                aria-label={`Remove designation ${d}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          ))}
+        </div>
+      )}
 
       {isAdmin && selectedIds.size > 0 && (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-900 bg-slate-900 px-4 py-2.5 text-white">
@@ -467,6 +741,9 @@ export default function EmployeesPage() {
           <div className="flex items-center gap-2">
             <Button variant="secondary" size="sm" onClick={() => setBulkOpen(true)}>
               <Gauge className="h-4 w-4" /> Set Quota
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setRoleOpen(true)}>
+              <Shield className="h-4 w-4" /> Assign Role
             </Button>
             <Button
               variant="ghost"
@@ -784,6 +1061,65 @@ export default function EmployeesPage() {
                   Apply Quota
                 </Button>
               </div>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk role assignment dialog */}
+      <Dialog open={roleOpen} onOpenChange={setRoleOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Assign Role — {selectedIds.size} employee(s)</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+              <p className="flex items-start gap-1.5">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>
+                  Only updates employees who <strong>already have user accounts</strong>. Employees
+                  without accounts will be skipped. To create new accounts, use the System Users
+                  page.
+                </span>
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="bulk-role">System Role</Label>
+              <Select
+                value={bulkRoleValue}
+                onValueChange={(v) => setBulkRoleValue(v as UserRole)}
+              >
+                <SelectTrigger id="bulk-role">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="user">Employee — Submit and track own requests</SelectItem>
+                  <SelectItem value="hr">HR — HR queue, employees, reports</SelectItem>
+                  <SelectItem value="doctor">Doctor — Doctor queue, own requests</SelectItem>
+                  <SelectItem value="pathologist">
+                    Pathologist — Pathology queue, test library, slips
+                  </SelectItem>
+                  <SelectItem value="medical">
+                    Medical Services — Medical queue, approve/reject
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-slate-500">
+                Admin role can only be assigned individually for security.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setRoleOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={applyBulkRole}
+                disabled={bulkRole.isPending || selectedIds.size === 0}
+              >
+                {bulkRole.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                Apply Role to {selectedIds.size}
+              </Button>
             </DialogFooter>
           </div>
         </DialogContent>
