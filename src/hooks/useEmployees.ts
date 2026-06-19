@@ -261,8 +261,10 @@ export function useDeleteEmployee() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['employees'] });
+      queryClient.invalidateQueries({ queryKey: ['employee-count'] });
       queryClient.invalidateQueries({ queryKey: ['dependents'] });
       queryClient.invalidateQueries({ queryKey: ['users'] });
+      queryClient.invalidateQueries({ queryKey: ['quota'] });
     },
     onError: (e: Error) => toast.error(`Failed to delete employee — ${e.message}`),
   });
