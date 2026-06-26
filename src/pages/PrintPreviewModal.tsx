@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { toast } from 'sonner';
@@ -13,16 +14,29 @@ interface PrintPreviewModalProps {
 }
 
 /** Render the slip card to a real downloadable PDF file (A4 portrait). */
-async function generatePdf(fileName: string) {
+async function generatePdf(_fileName: string) {
   const slip = document.getElementById('pathlab-print-slip');
-  if (!slip) throw new Error('Slip element not found');
+  if (!slip) throw new Error('Slip element not found in DOM');
+
+  console.log('[generatePdf] Slip element found, rendering to canvas...');
 
   const canvas = await html2canvas(slip, {
     scale: 2,
     backgroundColor: '#ffffff',
     useCORS: true,
+    allowTaint: true,
     logging: false,
+    imageTimeout: 5000,
+    onclone: (doc) => {
+      // Ensure cloned doc renders the slip fully visible
+      const cloned = doc.getElementById('pathlab-print-slip');
+      if (cloned) {
+        (cloned as HTMLElement).style.boxShadow = 'none';
+      }
+    },
   });
+
+  console.log('[generatePdf] Canvas generated:', canvas.width, 'x', canvas.height);
   // JPEG keeps the file small (a PNG of this slip is ~8 MB; JPEG is well under 1 MB).
   const imgData = canvas.toDataURL('image/jpeg', 0.92);
 
@@ -155,6 +169,18 @@ export default function PrintPreviewModal({ request, tests, onClose }: PrintPrev
   const [busy, setBusy] = useState<null | 'pdf' | 'print'>(null);
   const slipName = `PathLab-Slip-${request.slip_no ?? request.req_no}`;
 
+  // CRITICAL FIX: Force re-enable pointer events on body so portal isn't blocked
+  // by parent Radix Dialog's pointer-events:none trap.
+  useEffect(() => {
+    const prevBodyPointer = document.body.style.pointerEvents;
+    document.body.style.pointerEvents = 'auto';
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.pointerEvents = prevBodyPointer;
+      document.body.style.overflow = '';
+    };
+  }, []);
+
   const handleDownloadPdf = async () => {
     setBusy('pdf');
     const filename = `${slipName}.pdf`;
@@ -264,17 +290,22 @@ export default function PrintPreviewModal({ request, tests, onClose }: PrintPrev
     }
   };
 
-  return (
+  // CRITICAL FIX: Render via Portal directly to document.body so this modal
+  // is NOT inside the parent Radix Dialog's pointer-events trap. Without this,
+  // buttons appear visible but clicks are silently swallowed by the parent Dialog.
+  return createPortal(
     <div
       id="pathlab-print-overlay"
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 9999,
+        zIndex: 99999,
         display: 'flex',
         flexDirection: 'column',
         background: '#475569',
+        pointerEvents: 'auto',
       }}
+      onClick={(e) => e.stopPropagation()}
     >
       {/* Toolbar */}
       <div
@@ -405,17 +436,27 @@ export default function PrintPreviewModal({ request, tests, onClose }: PrintPrev
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              {/* Logo */}
-              <img
-                src="/logo.ico"
-                alt="PathLab Pro Logo"
-                style={{
-                  width: 50,
-                  height: 50,
-                  flexShrink: 0,
-                  borderRadius: 4,
-                }}
-              />
+              {/* Inline SVG logo - no CORS/loading issues with html2canvas */}
+              <svg
+                width="50"
+                height="50"
+                viewBox="0 0 50 50"
+                xmlns="http://www.w3.org/2000/svg"
+                style={{ flexShrink: 0, borderRadius: 4 }}
+                aria-label="PathLab Pro logo"
+              >
+                <defs>
+                  <linearGradient id="pathlab-logo-grad" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stopColor="#0ea5e9" />
+                    <stop offset="100%" stopColor="#06b6d4" />
+                  </linearGradient>
+                </defs>
+                <rect width="50" height="50" rx="10" fill="url(#pathlab-logo-grad)" />
+                <g transform="translate(25 25)">
+                  <rect x="-3" y="-13" width="6" height="26" rx="1" fill="#fff" />
+                  <rect x="-13" y="-3" width="26" height="6" rx="1" fill="#fff" />
+                </g>
+              </svg>
               <div>
                 <div style={{ fontSize: 18, fontWeight: 800, color: '#0f172a' }}>PathLab Pro</div>
                 <div style={{ fontSize: 10, color: '#64748b' }}>
@@ -652,6 +693,7 @@ export default function PrintPreviewModal({ request, tests, onClose }: PrintPrev
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
