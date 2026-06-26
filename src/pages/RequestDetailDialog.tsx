@@ -333,10 +333,25 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
         ? 'bg-amber-500'
         : 'bg-emerald-500';
 
+  // FIX: Tell Radix Dialog to ignore interactions with the PrintPreviewModal.
+  // Without these handlers, Radix's DismissableLayer captures clicks on the
+  // print preview overlay and prevents button clicks from registering.
+  const ignorePrintPreviewInteractions = (e: Event) => {
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('#pathlab-print-overlay')) {
+      e.preventDefault();
+    }
+  };
+
   return (
     <>
       <Dialog open={!!request} onOpenChange={(o) => !o && onClose()}>
-        <DialogContent className="max-w-[900px]">
+        <DialogContent
+          className="max-w-[900px]"
+          onInteractOutside={ignorePrintPreviewInteractions}
+          onPointerDownOutside={ignorePrintPreviewInteractions}
+          onFocusOutside={ignorePrintPreviewInteractions}
+        >
           <DialogHeader>
             <DialogTitle className="flex items-center gap-3">
               <span className="font-mono">{request.req_no}</span>

@@ -290,9 +290,9 @@ export default function PrintPreviewModal({ request, tests, onClose }: PrintPrev
     }
   };
 
-  // CRITICAL FIX: Render via Portal directly to document.body so this modal
-  // is NOT inside the parent Radix Dialog's pointer-events trap. Without this,
-  // buttons appear visible but clicks are silently swallowed by the parent Dialog.
+  // Portal to document.body ensures we render above the parent Radix Dialog.
+  // The parent dialog has onInteractOutside handlers that recognize this
+  // id and ignore clicks, allowing button events to register normally.
   return createPortal(
     <div
       id="pathlab-print-overlay"
@@ -305,7 +305,6 @@ export default function PrintPreviewModal({ request, tests, onClose }: PrintPrev
         background: '#475569',
         pointerEvents: 'auto',
       }}
-      onClick={(e) => e.stopPropagation()}
     >
       {/* Toolbar */}
       <div
