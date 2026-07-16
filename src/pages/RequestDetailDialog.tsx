@@ -1,5 +1,5 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
-import { Check, ChevronDown, ChevronUp, Info, Loader2, Plus, Printer, Trash2, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Check, ChevronDown, ChevronUp, FileDown, FlaskConical, Info, Loader2, Plus, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -40,7 +40,7 @@ import { supabase } from '@/lib/supabase';
 import { calcAge, cn, formatCurrency, formatDate, formatDateTime, titleCase } from '@/lib/utils';
 import type { RequestSummary, TestApproval } from '@/types';
 
-const PrintPreviewModal = lazy(() => import('./PrintPreviewModal'));
+import { RequisitionSlip, downloadSlipPdf } from '@/components/shared/RequisitionSlip';
 
 const APPROVAL_STYLES: Record<TestApproval, string> = {
   pending: 'bg-slate-100 text-slate-600 border-slate-200',
@@ -69,6 +69,7 @@ function deriveStep(status: RequestSummary['status']): { index: number; rejected
     case 'MEDICAL_REJECTED':
       return { index: 3, rejected: true };
     case 'PENDING_PATHOLOGY':
+    case 'SAMPLE_COLLECTED':
     case 'PATH_PARTIAL':
       return { index: 4, rejected: false };
     case 'COMPLETED':
@@ -95,7 +96,7 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
   const [note, setNote] = useState('');
   const [showTimeline, setShowTimeline] = useState(false);
   const [showQuota, setShowQuota] = useState(false);
-  const [printOpen, setPrintOpen] = useState(false);
+  const [slipBusy, setSlipBusy] = useState(false);
   const [addingTest, setAddingTest] = useState(false);
 
   const role = user?.role;
@@ -110,12 +111,17 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
     !!request && (status === 'HR_RESTRICTED' || status === 'PENDING_ADMIN') && role === 'admin';
   const canMedicalAct =
     !!request && status === 'PENDING_MEDICAL' && (role === 'medical' || role === 'admin');
+  // Pathology flow: PENDING_PATHOLOGY → (Sample Collection) → SAMPLE_COLLECTED → (Report Delivered) → COMPLETED
+  const canCollectSample =
+    !!request && status === 'PENDING_PATHOLOGY' && (role === 'pathologist' || role === 'admin');
   const canPathAct =
     !!request &&
-    (status === 'PENDING_PATHOLOGY' || status === 'PATH_PARTIAL') &&
+    (status === 'SAMPLE_COLLECTED' || status === 'PATH_PARTIAL') &&
     (role === 'pathologist' || role === 'admin');
   const canPrint =
-    !!request && (status === 'COMPLETED' || canPathAct) && (role === 'admin' || role === 'pathologist');
+    !!request &&
+    (status === 'COMPLETED' || canPathAct || canCollectSample) &&
+    (role === 'admin' || role === 'pathologist');
   const showCheckboxes = canDoctorAct || canPathAct;
 
   const tests = detail?.tests ?? [];
@@ -142,7 +148,7 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
     setNote('');
     setShowTimeline(false);
     setShowQuota(false);
-    setPrintOpen(false);
+    setSlipBusy(false);
     setAddingTest(false);
   }, [request?.id]);
 
@@ -294,11 +300,30 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
     );
   };
 
-  const handlePathComplete = () => {
+  // Pathologist confirms physical samples were collected — request advances to SAMPLE_COLLECTED.
+  const handleSampleCollection = () => {
+    action.mutate(
+      {
+        request,
+        stage: 'SAMPLE_COLLECTED',
+        updates: {
+          status: 'SAMPLE_COLLECTED',
+          pathologist_name: user!.name,
+          pathologist_at: now(),
+        },
+        note,
+      },
+      { onSuccess: () => finish(`Sample collection recorded for ${request.req_no}`) }
+    );
+  };
+
+  // "Report Delivered": completes the request. Once every approved test is delivered the
+  // status becomes COMPLETED, which counts against the employee's annual quota (balance -1).
+  const handleReportDelivered = () => {
     const approvedRows = tests.filter((t) => t.approval === 'approved');
     const completing = approvedRows.filter((t) => checked[t.id]);
     if (completing.length === 0) {
-      toast.error('Select at least one test to mark complete');
+      toast.error('Select at least one test to deliver');
       return;
     }
     const allDone = completing.length === approvedRows.length;
@@ -318,14 +343,28 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
         onSuccess: () =>
           finish(
             allDone
-              ? `Request ${request.req_no} completed — slip generated`
-              : `Partial completion recorded for ${request.req_no}`
+              ? `Report delivered — request ${request.req_no} completed and quota deducted`
+              : `Partial delivery recorded for ${request.req_no}`
           ),
       }
     );
   };
 
-  const hasAction = canDoctorAct || canHrAct || canAdminAct || canMedicalAct || canPathAct;
+  // Direct PDF download of the requisition slip (no preview modal).
+  const handleDownloadSlip = async () => {
+    setSlipBusy(true);
+    try {
+      const slipName = `PathLab-Slip-${request.slip_no ?? request.req_no}`;
+      await downloadSlipPdf(slipName);
+      toast.success(`Slip downloaded: ${slipName}.pdf`);
+    } catch (e) {
+      toast.error(`Could not download slip — ${(e as Error).message}`);
+    } finally {
+      setSlipBusy(false);
+    }
+  };
+
+  const hasAction = canDoctorAct || canHrAct || canAdminAct || canMedicalAct || canPathAct || canCollectSample;
   const quotaColor =
     usage >= quotaLimit
       ? 'bg-red-500'
@@ -333,25 +372,10 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
         ? 'bg-amber-500'
         : 'bg-emerald-500';
 
-  // FIX: Tell Radix Dialog to ignore interactions with the PrintPreviewModal.
-  // Without these handlers, Radix's DismissableLayer captures clicks on the
-  // print preview overlay and prevents button clicks from registering.
-  const ignorePrintPreviewInteractions = (e: Event) => {
-    const target = e.target as HTMLElement | null;
-    if (target?.closest('#pathlab-print-overlay')) {
-      e.preventDefault();
-    }
-  };
-
   return (
     <>
       <Dialog open={!!request} onOpenChange={(o) => !o && onClose()}>
-        <DialogContent
-          className="max-w-[900px]"
-          onInteractOutside={ignorePrintPreviewInteractions}
-          onPointerDownOutside={ignorePrintPreviewInteractions}
-          onFocusOutside={ignorePrintPreviewInteractions}
-        >
+        <DialogContent className="max-w-[900px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-3">
               <span className="font-mono">{request.req_no}</span>
@@ -725,16 +749,30 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
                   </Button>
                 </>
               )}
+              {canCollectSample && (
+                <Button variant="success" onClick={handleSampleCollection} disabled={action.isPending}>
+                  {action.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <FlaskConical className="h-4 w-4" />
+                  )}
+                  Sample Collection
+                </Button>
+              )}
               {canPathAct && (
-                <Button variant="success" onClick={handlePathComplete} disabled={action.isPending}>
+                <Button variant="success" onClick={handleReportDelivered} disabled={action.isPending}>
                   {action.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                  Mark Complete ({checkedRows.length})
+                  Report Delivered ({checkedRows.length})
                 </Button>
               )}
               {canPrint && (
-                <Button variant="outline" onClick={() => setPrintOpen(true)}>
-                  <Printer className="h-4 w-4" />
-                  Print Slip
+                <Button variant="outline" onClick={handleDownloadSlip} disabled={slipBusy}>
+                  {slipBusy ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <FileDown className="h-4 w-4" />
+                  )}
+                  {slipBusy ? 'Generating…' : 'Download Slip'}
                 </Button>
               )}
             </div>
@@ -742,11 +780,8 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
         </DialogContent>
       </Dialog>
 
-      {printOpen && (
-        <Suspense fallback={null}>
-          <PrintPreviewModal request={request} tests={tests} onClose={() => setPrintOpen(false)} />
-        </Suspense>
-      )}
+      {/* Off-screen slip document — captured by html2canvas when Download Slip is clicked */}
+      {canPrint && <RequisitionSlip request={request} tests={tests} />}
     </>
   );
 }

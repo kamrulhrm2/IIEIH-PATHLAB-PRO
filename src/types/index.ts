@@ -14,6 +14,7 @@ export type RequestStatus =
   | 'PENDING_MEDICAL'
   | 'MEDICAL_REJECTED'
   | 'PENDING_PATHOLOGY'
+  | 'SAMPLE_COLLECTED'
   | 'PATH_PARTIAL'
   | 'COMPLETED';
 
@@ -28,6 +29,7 @@ export type TimelineStage =
   | 'ADMIN_REJECTED'
   | 'MEDICAL_APPROVED'
   | 'MEDICAL_REJECTED'
+  | 'SAMPLE_COLLECTED'
   | 'PATH_PARTIAL'
   | 'COMPLETED';
 

@@ -65,6 +65,7 @@ const ALL_STATUSES: RequestStatus[] = [
   'PENDING_MEDICAL',
   'MEDICAL_REJECTED',
   'PENDING_PATHOLOGY',
+  'SAMPLE_COLLECTED',
   'PATH_PARTIAL',
   'COMPLETED',
 ];
@@ -76,7 +77,7 @@ const MODE_STATUSES: Record<QueueMode, RequestStatus[]> = {
   hr: ['PENDING_HR', 'PENDING_HR_PARTIAL'],
   restricted: ['HR_RESTRICTED', 'PENDING_ADMIN'],
   medical: ['PENDING_MEDICAL'],
-  pathology: ['PENDING_PATHOLOGY', 'PATH_PARTIAL'],
+  pathology: ['PENDING_PATHOLOGY', 'SAMPLE_COLLECTED', 'PATH_PARTIAL'],
 };
 
 const EMPTY_CONFIG: Record<QueueMode, { icon: LucideIcon; title: string }> = {

@@ -142,7 +142,12 @@ export default function DashboardPage() {
         return [
           {
             label: 'Pathology Queue',
-            value: count((r) => r.status === 'PENDING_PATHOLOGY' || r.status === 'PATH_PARTIAL'),
+            value: count(
+              (r) =>
+                r.status === 'PENDING_PATHOLOGY' ||
+                r.status === 'SAMPLE_COLLECTED' ||
+                r.status === 'PATH_PARTIAL'
+            ),
             icon: Microscope,
             accent: 'bg-violet-100 text-violet-700',
           },

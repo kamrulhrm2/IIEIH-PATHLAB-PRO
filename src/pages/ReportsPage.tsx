@@ -70,6 +70,7 @@ const STATUS_COLORS: Record<RequestStatus, string> = {
   PENDING_MEDICAL: '#06b6d4',
   MEDICAL_REJECTED: '#dc2626',
   PENDING_PATHOLOGY: '#8b5cf6',
+  SAMPLE_COLLECTED: '#6366f1',
   PATH_PARTIAL: '#14b8a6',
   COMPLETED: '#10b981',
 };

@@ -47,7 +47,7 @@ export function useRequestList(mode: QueueMode) {
         else if (mode === 'hr') q = q.in('status', ['PENDING_HR', 'PENDING_HR_PARTIAL']);
         else if (mode === 'restricted') q = q.in('status', ['HR_RESTRICTED', 'PENDING_ADMIN']);
         else if (mode === 'medical') q = q.eq('status', 'PENDING_MEDICAL');
-        else if (mode === 'pathology') q = q.in('status', ['PENDING_PATHOLOGY', 'PATH_PARTIAL']);
+        else if (mode === 'pathology') q = q.in('status', ['PENDING_PATHOLOGY', 'SAMPLE_COLLECTED', 'PATH_PARTIAL']);
 
         const { data, error } = await q;
         if (error) throw error;
