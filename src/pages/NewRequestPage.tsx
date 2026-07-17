@@ -415,12 +415,12 @@ export default function NewRequestPage() {
                 </div>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="notes">Clinical Notes (optional)</Label>
+                <Label htmlFor="notes">Patient Complaint (optional)</Label>
                 <Textarea
                   id="notes"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Clinical notes, symptoms, doctor's advice..."
+                  placeholder="Describe the patient's complaint, symptoms, history..."
                   rows={3}
                 />
               </div>

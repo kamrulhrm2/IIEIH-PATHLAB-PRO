@@ -1,6 +1,7 @@
-import { useMemo, useState, type FormEvent } from 'react';
-import { Heart, Pencil, Plus, Search, Trash2, UserCheck } from 'lucide-react';
+import { useMemo, useRef, useState, type FormEvent } from 'react';
+import { AlertTriangle, FileDown, Heart, Loader2, Pencil, Plus, Search, Trash2, Upload, UserCheck } from 'lucide-react';
 import { toast } from 'sonner';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -20,14 +21,29 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { RelationBadge } from '@/components/shared/RelationBadge';
 import { SearchableSelect } from '@/components/shared/SearchableSelect';
 import { useAuth } from '@/context/AuthContext';
-import { useDeleteDependent, useDependents, useSaveDependent } from '@/hooks/useDependents';
+import {
+  useBulkInsertDependents,
+  useDeleteDependent,
+  useDependents,
+  useSaveDependent,
+  type NewDependent,
+} from '@/hooks/useDependents';
 import { useEmployees } from '@/hooks/useEmployees';
+import { downloadCsv, parseCsv } from '@/lib/csv';
 import { formatDate } from '@/lib/utils';
 import type { Dependent, GenderType, RelationType } from '@/types';
 
@@ -70,6 +86,14 @@ export default function DependentsPage() {
   });
   const [formError, setFormError] = useState('');
   const [deleting, setDeleting] = useState<Dependent | null>(null);
+
+  // CSV bulk import
+  const bulkInsert = useBulkInsertDependents();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importFileName, setImportFileName] = useState('');
+  const [importRows, setImportRows] = useState<NewDependent[]>([]);
+  const [importErrors, setImportErrors] = useState<string[]>([]);
 
   const empByCode = useMemo(
     () => new Map(employees.map((e) => [e.emp_code, e])),
@@ -155,6 +179,125 @@ export default function DependentsPage() {
     );
   };
 
+  // ---- CSV bulk import ----
+  const IMPORT_RELATIONS: RelationType[] = ['Spouse', 'Father', 'Mother', 'Son', 'Daughter'];
+
+  const downloadTemplate = () => {
+    downloadCsv(
+      'dependent-import-template.csv',
+      ['emp_code', 'name', 'relation', 'dob', 'gender', 'contact'],
+      [
+        ['E101', 'Jane Doe', 'Spouse', '1990-05-20', 'Female', '01700000000'],
+        ['E101', 'Tommy Doe', 'Son', '2015-11-02', 'Male', ''],
+      ]
+    );
+  };
+
+  const openImport = () => {
+    setImportFileName('');
+    setImportRows([]);
+    setImportErrors([]);
+    setImportOpen(true);
+  };
+
+  const handleImportFile = async (file: File) => {
+    setImportFileName(file.name);
+    setImportRows([]);
+    setImportErrors([]);
+
+    const grid = parseCsv(await file.text());
+    if (grid.length < 2) {
+      setImportErrors(['The file is empty or has no data rows below the header.']);
+      return;
+    }
+
+    const header = grid[0].map((h) => h.trim().toLowerCase());
+    const col = (name: string) => header.indexOf(name);
+    const iEmp = col('emp_code');
+    const iName = col('name');
+    const iRel = col('relation');
+    if (iEmp === -1 || iName === -1 || iRel === -1) {
+      setImportErrors([
+        'Missing required columns. The header row must include "emp_code", "name" and "relation". Download the template for the exact format.',
+      ]);
+      return;
+    }
+    const iDob = col('dob');
+    const iGender = col('gender');
+    const iContact = col('contact');
+
+    const validEmpCodes = new Set(employees.map((e) => e.emp_code));
+    const existing = new Set(dependents.map((d) => `${d.emp_code}|${d.name.toLowerCase()}|${d.relation}`));
+    const seen = new Set<string>();
+    const valid: NewDependent[] = [];
+    const errors: string[] = [];
+    const cell = (r: string[], i: number) => (i >= 0 ? (r[i] ?? '').trim() : '');
+
+    grid.slice(1).forEach((r, idx) => {
+      const line = idx + 2;
+      const empCode = cell(r, iEmp).toUpperCase();
+      const name = cell(r, iName);
+      const relRaw = cell(r, iRel);
+      const rel = (relRaw.charAt(0).toUpperCase() + relRaw.slice(1).toLowerCase()) as RelationType;
+
+      if (!empCode) return errors.push(`Row ${line}: emp_code is required.`);
+      if (!validEmpCodes.has(empCode))
+        return errors.push(`Row ${line}: employee ${empCode} does not exist in the system.`);
+      if (name.length < 2) return errors.push(`Row ${line}: name is required (min 2 characters).`);
+      if (!IMPORT_RELATIONS.includes(rel))
+        return errors.push(
+          `Row ${line}: relation "${relRaw}" must be one of ${IMPORT_RELATIONS.join(', ')}.`
+        );
+
+      const key = `${empCode}|${name.toLowerCase()}|${rel}`;
+      if (existing.has(key))
+        return errors.push(`Row ${line}: ${name} (${rel}) already registered for ${empCode}.`);
+      if (seen.has(key)) return errors.push(`Row ${line}: duplicated in the file.`);
+
+      let dob: string | null = null;
+      const dobRaw = cell(r, iDob);
+      if (dobRaw) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dobRaw))
+          return errors.push(`Row ${line}: dob "${dobRaw}" must be in YYYY-MM-DD format.`);
+        dob = dobRaw;
+      }
+
+      let gender: GenderType | null = null;
+      const gRaw = cell(r, iGender);
+      if (gRaw) {
+        const g = (gRaw.charAt(0).toUpperCase() + gRaw.slice(1).toLowerCase()) as GenderType;
+        if (!GENDERS.includes(g))
+          return errors.push(`Row ${line}: gender "${gRaw}" must be Male, Female or Other.`);
+        gender = g;
+      }
+
+      seen.add(key);
+      valid.push({
+        emp_code: empCode,
+        name,
+        relation: rel,
+        dob,
+        gender,
+        contact: cell(r, iContact) || null,
+      });
+    });
+
+    setImportRows(valid);
+    setImportErrors(errors);
+  };
+
+  const runImport = () => {
+    if (importRows.length === 0) return;
+    bulkInsert.mutate(importRows, {
+      onSuccess: () => {
+        setImportOpen(false);
+        setImportRows([]);
+        setImportErrors([]);
+        setImportFileName('');
+      },
+    });
+  };
+
   return (
     <div>
       <PageHeader
@@ -162,9 +305,14 @@ export default function DependentsPage() {
         subtitle="Family members registered for health benefit"
         actions={
           canManage ? (
-            <Button onClick={openAdd}>
-              <Plus className="h-4 w-4" /> Add Dependent
-            </Button>
+            <>
+              <Button variant="outline" onClick={openImport}>
+                <Upload className="h-4 w-4" /> Import CSV
+              </Button>
+              <Button onClick={openAdd}>
+                <Plus className="h-4 w-4" /> Add Dependent
+              </Button>
+            </>
           ) : undefined
         }
       />
@@ -391,6 +539,122 @@ export default function DependentsPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* CSV bulk import dialog */}
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Import Dependents from CSV</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+              <p>
+                Upload a <span className="font-medium">.csv</span> file with a header row. Required
+                columns: <span className="font-mono font-semibold">emp_code</span>,{' '}
+                <span className="font-mono font-semibold">name</span>,{' '}
+                <span className="font-mono font-semibold">relation</span> (Spouse, Father, Mother,
+                Son, Daughter). Optional: <span className="font-mono">dob, gender, contact</span>.
+              </p>
+              <Button
+                type="button"
+                variant="link"
+                className="mt-1 h-auto p-0 text-blue-600"
+                onClick={downloadTemplate}
+              >
+                <FileDown className="h-4 w-4" /> Download template
+              </Button>
+            </div>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleImportFile(f);
+                e.target.value = '';
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full justify-start font-normal text-slate-600"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className="h-4 w-4" /> {importFileName || 'Choose CSV file…'}
+            </Button>
+
+            {(importRows.length > 0 || importErrors.length > 0) && (
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <Badge
+                    variant="outline"
+                    className="bg-emerald-100 text-emerald-800 border-emerald-200"
+                  >
+                    {importRows.length} ready to import
+                  </Badge>
+                  {importErrors.length > 0 && (
+                    <Badge variant="outline" className="bg-red-100 text-red-800 border-red-200">
+                      {importErrors.length} row(s) skipped
+                    </Badge>
+                  )}
+                </div>
+
+                {importRows.length > 0 && (
+                  <div className="max-h-40 overflow-auto rounded-lg border border-slate-200">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Employee</TableHead>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Relation</TableHead>
+                          <TableHead className="hidden sm:table-cell">DOB</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {importRows.slice(0, 50).map((d, i) => (
+                          <TableRow key={`${d.emp_code}-${d.name}-${i}`}>
+                            <TableCell className="font-mono text-xs font-bold">{d.emp_code}</TableCell>
+                            <TableCell className="text-sm">{d.name}</TableCell>
+                            <TableCell className="text-xs">{d.relation}</TableCell>
+                            <TableCell className="hidden text-xs text-slate-500 sm:table-cell">
+                              {d.dob ?? '—'}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+
+                {importErrors.length > 0 && (
+                  <div className="max-h-32 space-y-1 overflow-auto rounded-lg border border-red-200 bg-red-50 p-2">
+                    {importErrors.map((err, i) => (
+                      <p key={i} className="flex items-start gap-1.5 text-xs text-red-700">
+                        <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" /> {err}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setImportOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={runImport}
+              disabled={bulkInsert.isPending || importRows.length === 0}
+            >
+              {bulkInsert.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              Import {importRows.length || ''} Dependent{importRows.length === 1 ? '' : 's'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

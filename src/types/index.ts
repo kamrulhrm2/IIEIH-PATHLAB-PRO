@@ -116,6 +116,7 @@ export interface PathRequest {
   dependent_id: string | null;
   status: RequestStatus;
   notes: string | null;
+  doctor_prescription: string | null;
   assigned_doctor_id: string | null;
   assigned_doctor_name: string | null;
   doctor_name: string | null;

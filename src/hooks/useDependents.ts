@@ -45,6 +45,51 @@ export function useDependents(empCode?: string | null) {
   });
 }
 
+export type NewDependent = Omit<Dependent, 'id' | 'created_at' | 'updated_at'>;
+
+/**
+ * Bulk import dependents from CSV. Chunked inserts (500/batch) support
+ * unlimited rows. Rows are plain INSERTs — dependents have no natural
+ * unique key, so duplicates are prevented at the parser level instead.
+ */
+const DEP_CHUNK = 500;
+
+export function useBulkInsertDependents() {
+  return useMutation({
+    mutationFn: async (rows: NewDependent[]) => {
+      if (rows.length === 0) return { total: 0, processed: 0, failedBatches: 0 };
+
+      let processed = 0;
+      const errors: string[] = [];
+      for (let i = 0; i < rows.length; i += DEP_CHUNK) {
+        const batch = rows.slice(i, i + DEP_CHUNK);
+        const { error } = await supabase.from('dependents').insert(batch);
+        if (error) {
+          errors.push(`Batch ${Math.floor(i / DEP_CHUNK) + 1}: ${error.message}`);
+        } else {
+          processed += batch.length;
+        }
+      }
+
+      if (processed === 0 && errors.length > 0) {
+        throw new Error(errors[0]);
+      }
+      return { total: rows.length, processed, failedBatches: errors.length };
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['dependents'] });
+      if ((result.failedBatches ?? 0) > 0) {
+        toast.warning(
+          `⚠️ Partially imported: ${result.processed}/${result.total} dependents. ${result.failedBatches} batch(es) failed.`
+        );
+      } else {
+        toast.success(`✅ ${result.processed} dependent(s) imported successfully`);
+      }
+    },
+    onError: (e: Error) => toast.error(`❌ Bulk import failed — ${e.message}`),
+  });
+}
+
 export function useSaveDependent() {
   return useMutation({
     mutationFn: async (dep: Partial<Dependent>) => {

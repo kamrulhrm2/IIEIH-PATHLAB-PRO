@@ -313,20 +313,8 @@ export function RequisitionSlip({ request, tests }: RequisitionSlipProps) {
           </tbody>
         </table>
 
-        {/* E. Clinical notes */}
-        {request.notes && (
-          <div
-            style={{
-              border: '1px solid #e2e8f0',
-              borderRadius: 5,
-              padding: '9px 12px',
-              marginBottom: 14,
-            }}
-          >
-            <div style={cellLabel}>Clinical Notes / Instructions</div>
-            <div style={{ fontSize: 11, color: '#475569' }}>{request.notes}</div>
-          </div>
-        )}
+        {/* Patient complaint and doctor prescription are intentionally NOT printed
+            on the requisition slip — this document goes to pathology. */}
 
         {/* F. Signature blocks */}
         <div

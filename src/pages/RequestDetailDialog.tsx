@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, ChevronDown, ChevronUp, FileDown, FlaskConical, Info, Loader2, Plus, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, FileDown, FileText, FlaskConical, Info, Loader2, Plus, Stethoscope, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -41,6 +41,7 @@ import { calcAge, cn, formatCurrency, formatDate, formatDateTime, titleCase } fr
 import type { RequestSummary, TestApproval } from '@/types';
 
 import { RequisitionSlip, downloadSlipPdf } from '@/components/shared/RequisitionSlip';
+import { PrescriptionSlip, downloadPrescriptionPdf } from '@/components/shared/PrescriptionSlip';
 
 const APPROVAL_STYLES: Record<TestApproval, string> = {
   pending: 'bg-slate-100 text-slate-600 border-slate-200',
@@ -97,6 +98,8 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
   const [showTimeline, setShowTimeline] = useState(false);
   const [showQuota, setShowQuota] = useState(false);
   const [slipBusy, setSlipBusy] = useState(false);
+  const [rxBusy, setRxBusy] = useState(false);
+  const [prescription, setPrescription] = useState('');
   const [addingTest, setAddingTest] = useState(false);
 
   const role = user?.role;
@@ -124,6 +127,18 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
     (role === 'admin' || role === 'pathologist');
   const showCheckboxes = canDoctorAct || canPathAct;
 
+  // Task 3: patient complaint + doctor prescription are hidden from the pathology view.
+  const hideClinicalInfo = role === 'pathologist';
+  // Task 4: the patient side (requester or the employee it belongs to) can download
+  // the doctor's advice/prescription at any time once the doctor has reviewed.
+  const canDownloadRx =
+    !!request &&
+    !!user &&
+    (request.requester_id === user.id ||
+      (!!user.emp_code && request.employee_code === user.emp_code) ||
+      role === 'admin') &&
+    !!(request.doctor_prescription || request.doctor_name);
+
   const tests = detail?.tests ?? [];
   const timeline = detail?.timeline ?? [];
 
@@ -146,9 +161,11 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
   useEffect(() => {
     if (!request) return;
     setNote('');
+    setPrescription(request.doctor_prescription ?? '');
     setShowTimeline(false);
     setShowQuota(false);
     setSlipBusy(false);
+    setRxBusy(false);
     setAddingTest(false);
   }, [request?.id]);
 
@@ -193,6 +210,7 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
           status: allChecked ? 'PENDING_HR' : 'PENDING_HR_PARTIAL',
           doctor_name: user!.name,
           doctor_at: now(),
+          doctor_prescription: prescription.trim() || null,
         },
         testUpdates: tests.map((t) => ({
           id: t.id,
@@ -209,7 +227,12 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
       {
         request,
         stage: 'DOCTOR_REJECTED',
-        updates: { status: 'DOCTOR_REJECTED', doctor_name: user!.name, doctor_at: now() },
+        updates: {
+          status: 'DOCTOR_REJECTED',
+          doctor_name: user!.name,
+          doctor_at: now(),
+          doctor_prescription: prescription.trim() || null,
+        },
         testUpdates: tests.map((t) => ({ id: t.id, approval: 'rejected' })),
         note,
       },
@@ -361,6 +384,20 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
       toast.error(`Could not download slip — ${(e as Error).message}`);
     } finally {
       setSlipBusy(false);
+    }
+  };
+
+  // Task 4: patient-side PDF download of the doctor's advice/prescription.
+  const handleDownloadPrescription = async () => {
+    setRxBusy(true);
+    try {
+      const fileName = `Prescription-${request.req_no}`;
+      await downloadPrescriptionPdf(fileName);
+      toast.success(`Prescription downloaded: ${fileName}.pdf`);
+    } catch (e) {
+      toast.error(`Could not download prescription — ${(e as Error).message}`);
+    } finally {
+      setRxBusy(false);
     }
   };
 
@@ -657,13 +694,30 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
             )}
           </div>
 
-          {/* Section 5 — Clinical notes */}
-          {request.notes && (
+          {/* Section 5 — Patient complaint + doctor prescription
+              (hidden entirely from the pathology view) */}
+          {!hideClinicalInfo && request.notes && (
             <div className="rounded-lg bg-slate-50 p-3">
               <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                Clinical Notes
+                Patient Complaint
               </p>
-              <p className="text-sm text-slate-700">{request.notes}</p>
+              <p className="whitespace-pre-wrap text-sm text-slate-700">{request.notes}</p>
+            </div>
+          )}
+          {!hideClinicalInfo && request.doctor_prescription && !canDoctorAct && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+              <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-blue-600">
+                <Stethoscope className="h-3.5 w-3.5" /> Doctor&apos;s Prescription / Advice
+              </p>
+              <p className="whitespace-pre-wrap text-sm text-slate-800">
+                {request.doctor_prescription}
+              </p>
+              {request.doctor_name && (
+                <p className="mt-1.5 text-xs text-slate-500">
+                  — {request.doctor_name}
+                  {request.doctor_at ? ` · ${formatDateTime(request.doctor_at)}` : ''}
+                </p>
+              )}
             </div>
           )}
 
@@ -696,7 +750,21 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
           </div>
 
           {/* Section 7 — Action area */}
-          {(hasAction || canPrint) && <Separator />}
+          {(hasAction || canPrint || canDownloadRx) && <Separator />}
+          {canDoctorAct && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3">
+              <p className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-blue-700">
+                <Stethoscope className="h-3.5 w-3.5" /> Doctor&apos;s Prescription / Advice
+              </p>
+              <Textarea
+                value={prescription}
+                onChange={(e) => setPrescription(e.target.value)}
+                placeholder="Write the prescription or medical advice for the patient... (saved with your decision; visible to the patient, hidden from pathology)"
+                rows={4}
+                className="bg-white"
+              />
+            </div>
+          )}
           {hasAction && (
             <Textarea
               value={note}
@@ -705,7 +773,7 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
               rows={2}
             />
           )}
-          {(hasAction || canPrint) && (
+          {(hasAction || canPrint || canDownloadRx) && (
             <div className="flex flex-wrap justify-end gap-2">
               {canDoctorAct && (
                 <>
@@ -765,6 +833,16 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
                   Report Delivered ({checkedRows.length})
                 </Button>
               )}
+              {canDownloadRx && (
+                <Button variant="outline" onClick={handleDownloadPrescription} disabled={rxBusy}>
+                  {rxBusy ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <FileText className="h-4 w-4" />
+                  )}
+                  {rxBusy ? 'Generating…' : 'Download Prescription'}
+                </Button>
+              )}
               {canPrint && (
                 <Button variant="outline" onClick={handleDownloadSlip} disabled={slipBusy}>
                   {slipBusy ? (
@@ -780,8 +858,9 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
         </DialogContent>
       </Dialog>
 
-      {/* Off-screen slip document — captured by html2canvas when Download Slip is clicked */}
+      {/* Off-screen documents — captured by html2canvas on demand */}
       {canPrint && <RequisitionSlip request={request} tests={tests} />}
+      {canDownloadRx && <PrescriptionSlip request={request} />}
     </>
   );
 }
