@@ -44,6 +44,38 @@ export function useTests(includeInactive = false) {
   });
 }
 
+export interface TestPopularity {
+  id: string;
+  code: string;
+  name: string;
+  category: string;
+  price: number;
+  qty: number;
+  approved_value: number;
+}
+
+/** Top tests by how often they are ordered (dashboard widget). */
+export function useTestPopularity(limit = 10) {
+  return useQuery({
+    queryKey: ['test-popularity', limit],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('vw_test_popularity')
+        .select('*')
+        .order('qty', { ascending: false })
+        .limit(limit);
+      if (error) throw error;
+      return (data ?? []).map((r) => ({
+        ...r,
+        qty: Number(r.qty),
+        approved_value: Number(r.approved_value),
+        price: Number(r.price),
+      })) as TestPopularity[];
+    },
+    staleTime: 30_000,
+  });
+}
+
 export function useSaveTest() {
   return useMutation({
     mutationFn: async (test: Partial<LabTest>) => {

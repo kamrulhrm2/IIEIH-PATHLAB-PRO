@@ -370,6 +370,7 @@ export function useRequestAction() {
       queryClient.invalidateQueries({ queryKey: ['usage'] });
       queryClient.invalidateQueries({ queryKey: ['quota'] });
       queryClient.invalidateQueries({ queryKey: ['employee-year-requests'] });
+      queryClient.invalidateQueries({ queryKey: ['test-popularity'] });
     },
     onError: (e: Error) => toast.error(`Action failed — ${e.message}`),
   });

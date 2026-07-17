@@ -3,9 +3,11 @@ import { Link } from 'react-router-dom';
 import {
   Activity,
   AlertTriangle,
+  BadgeDollarSign,
   CheckCircle2,
   ClipboardList,
   FileText,
+  FlaskConical,
   Gauge,
   Hourglass,
   Microscope,
@@ -35,16 +37,18 @@ import { ROLE_LABELS } from '@/components/shared/RoleBadge';
 import { useAuth } from '@/context/AuthContext';
 import { useEmployees } from '@/hooks/useEmployees';
 import { useEmployeeUsage, useRequestList } from '@/hooks/useRequests';
+import { useTestPopularity } from '@/hooks/useTests';
 import { useQuotaLimit } from '@/hooks/useSettings';
 import { cn, formatDate, monthName } from '@/lib/utils';
 import type { RequestSummary } from '@/types';
 import { RequestDetailDialog } from './RequestDetailDialog';
 
-const TERMINAL_REJECTED = ['DOCTOR_REJECTED', 'ADMIN_REJECTED'];
+// Terminal rejection states — these are FINISHED, never "pending"
+const TERMINAL_REJECTED = ['DOCTOR_REJECTED', 'ADMIN_REJECTED', 'MEDICAL_REJECTED'];
 
 interface Kpi {
   label: string;
-  value: number;
+  value: number | string;
   icon: LucideIcon;
   accent: string;
 }
@@ -53,15 +57,23 @@ function KpiCard({ kpi, loading }: { kpi: Kpi; loading: boolean }) {
   return (
     <Card className="transition-colors hover:border-slate-300">
       <CardContent className="flex items-center justify-between p-5">
-        <div>
+        <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{kpi.label}</p>
           {loading ? (
             <Skeleton className="mt-1 h-8 w-12" />
           ) : (
-            <p className="text-3xl font-bold text-slate-900">{kpi.value}</p>
+            <p
+              className={cn(
+                'truncate font-bold text-slate-900',
+                typeof kpi.value === 'string' ? 'text-2xl' : 'text-3xl'
+              )}
+              title={String(kpi.value)}
+            >
+              {kpi.value}
+            </p>
           )}
         </div>
-        <div className={cn('rounded-lg p-2.5', kpi.accent)}>
+        <div className={cn('shrink-0 rounded-lg p-2.5', kpi.accent)}>
           <kpi.icon className="h-5 w-5" />
         </div>
       </CardContent>
@@ -97,6 +109,17 @@ export default function DashboardPage() {
 
   const remaining = Math.max(quotaLimit - myUsage, 0);
 
+  // Total money value of approved/completed tests across all requests
+  const totalTestValue = useMemo(
+    () => requests.reduce((sum, r) => sum + Number(r.approved_amount ?? 0), 0),
+    [requests]
+  );
+
+  // Top tests widget (admin + hr)
+  const showTopTests = role === 'admin' || role === 'hr';
+  const { data: topTests = [], isLoading: topLoading } = useTestPopularity(10);
+  const maxQty = topTests.length > 0 ? Math.max(...topTests.map((t) => t.qty)) : 0;
+
   const kpis: Kpi[] = useMemo(() => {
     const count = (fn: (r: RequestSummary) => boolean) => requests.filter(fn).length;
     switch (role) {
@@ -111,6 +134,12 @@ export default function DashboardPage() {
           },
           { label: 'Completed', value: count((r) => r.status === 'COMPLETED'), icon: CheckCircle2, accent: 'bg-emerald-100 text-emerald-700' },
           { label: 'Total Employees', value: employees.length, icon: Users, accent: 'bg-blue-100 text-blue-700' },
+          {
+            label: 'Total Test Value',
+            value: `৳ ${totalTestValue.toLocaleString('en-US', { maximumFractionDigits: 0 })}`,
+            icon: BadgeDollarSign,
+            accent: 'bg-violet-100 text-violet-700',
+          },
         ];
       case 'hr':
         return [
@@ -188,7 +217,7 @@ export default function DashboardPage() {
           { label: 'Remaining Quota', value: remaining, icon: Gauge, accent: 'bg-blue-100 text-blue-700' },
         ];
     }
-  }, [role, requests, employees, mine, remaining]);
+  }, [role, requests, employees, mine, remaining, totalTestValue]);
 
   const showQuotaCard = role === 'doctor' || role === 'pathologist' || role === 'medical' || role === 'user';
   const quotaRatio = quotaLimit > 0 ? remaining / quotaLimit : 0;
@@ -218,7 +247,12 @@ export default function DashboardPage() {
         subtitle={`Signed in as ${ROLE_LABELS[role]} · ${year}`}
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div
+        className={cn(
+          'grid grid-cols-1 gap-4 sm:grid-cols-2',
+          kpis.length >= 5 ? 'lg:grid-cols-3 xl:grid-cols-5' : 'lg:grid-cols-4'
+        )}
+      >
         {kpis.map((kpi) =>
           kpi.label === 'Remaining Quota' && showQuotaCard ? (
             <Card key={kpi.label} className="transition-colors hover:border-slate-300">
@@ -349,6 +383,76 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Top 10 tests by quantity (admin + hr) */}
+      {showTopTests && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <FlaskConical className="h-4 w-4 text-violet-600" />
+              Top 10 Tests by Quantity
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {topLoading && (
+              <div className="space-y-2">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} className="h-8 w-full" />
+                ))}
+              </div>
+            )}
+            {!topLoading && topTests.length === 0 && (
+              <p className="py-6 text-center text-sm text-slate-400">
+                No test orders yet — the ranking appears once requests contain tests
+              </p>
+            )}
+            {!topLoading && topTests.length > 0 && (
+              <div className="space-y-2.5">
+                {topTests.map((t, i) => (
+                  <div key={t.id} className="flex items-center gap-3">
+                    <span
+                      className={cn(
+                        'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold',
+                        i === 0
+                          ? 'bg-amber-100 text-amber-700'
+                          : i === 1
+                            ? 'bg-slate-200 text-slate-600'
+                            : i === 2
+                              ? 'bg-orange-100 text-orange-700'
+                              : 'bg-slate-100 text-slate-500'
+                      )}
+                    >
+                      {i + 1}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <p className="truncate text-sm font-medium text-slate-800">
+                          {t.name}
+                          <span className="ml-1.5 font-mono text-[10px] text-slate-400">
+                            {t.code}
+                          </span>
+                        </p>
+                        <p className="shrink-0 text-xs text-slate-500">
+                          <span className="font-bold text-slate-800">{t.qty}</span> ordered
+                          <span className="ml-2 text-violet-600">
+                            ৳ {t.approved_value.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                          </span>
+                        </p>
+                      </div>
+                      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                        <div
+                          className="h-full rounded-full bg-violet-500"
+                          style={{ width: `${maxQty > 0 ? Math.max((t.qty / maxQty) * 100, 4) : 0}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <RequestDetailDialog request={selected} onClose={() => setSelected(null)} />
     </div>
