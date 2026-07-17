@@ -100,6 +100,33 @@ export interface TestCategory {
   created_at: string;
 }
 
+export interface Medicine {
+  id: string;
+  name: string;
+  generic_name: string | null;
+  strength: string | null;
+  form: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A medicine prescribed on a request, with its time-of-day schedule. */
+export interface RequestMedicine {
+  id: string;
+  request_id: string;
+  medicine_id: string | null;
+  medicine_name: string;
+  strength: string | null;
+  form: string | null;
+  t_morning: boolean;
+  t_afternoon: boolean;
+  t_evening: boolean;
+  t_night: boolean;
+  instruction: string | null;
+  created_at: string;
+}
+
 export interface PathRequest {
   id: string;
   req_no: string;

@@ -1,5 +1,5 @@
 import { calcAge, formatDate, formatDateTime } from '@/lib/utils';
-import type { RequestSummary } from '@/types';
+import type { RequestMedicine, RequestSummary, RequestTest } from '@/types';
 
 /**
  * PrescriptionSlip — printable A4 document with the patient complaint and the
@@ -70,7 +70,29 @@ export async function downloadPrescriptionPdf(fileName: string): Promise<void> {
   pdf.save(`${fileName}.pdf`);
 }
 
-export function PrescriptionSlip({ request }: { request: RequestSummary }) {
+const rxTiming = (m: RequestMedicine) =>
+  [
+    m.t_morning && 'Morning',
+    m.t_afternoon && 'Afternoon',
+    m.t_evening && 'Evening',
+    m.t_night && 'Night',
+  ]
+    .filter(Boolean)
+    .join(' · ') || 'As directed';
+
+interface PrescriptionSlipProps {
+  request: RequestSummary;
+  tests: RequestTest[];
+  medicines: RequestMedicine[];
+}
+
+export function PrescriptionSlip({ request, tests, medicines }: PrescriptionSlipProps) {
+  // Suggested tests = the doctor-approved set (falls back to all pre-approval)
+  const approvedTests = tests.filter(
+    (t) => t.approval === 'approved' || t.approval === 'completed'
+  );
+  const suggestedTests = approvedTests.length > 0 ? approvedTests : tests;
+
   return (
     <div
       aria-hidden="true"
@@ -155,37 +177,125 @@ export function PrescriptionSlip({ request }: { request: RequestSummary }) {
           </div>
         </div>
 
-        {/* Patient complaint */}
+        {/* 1. Patient complaint */}
         <div
           style={{
             border: '1px solid #e2e8f0',
             borderRadius: 5,
             padding: '12px 14px',
-            marginBottom: 14,
-            minHeight: 70,
+            marginBottom: 12,
+            minHeight: 56,
           }}
         >
-          <div style={sectionLabel}>Patient Complaint</div>
+          <div style={sectionLabel}>1 · Patient Complaint</div>
           <div style={{ fontSize: 12, color: '#334155', whiteSpace: 'pre-wrap' }}>
             {request.notes?.trim() || '—'}
           </div>
         </div>
 
-        {/* Doctor prescription */}
+        {/* 2. Doctor recommendation */}
         <div
           style={{
             border: '1.5px solid #bfdbfe',
             background: '#eff6ff',
             borderRadius: 5,
             padding: '12px 14px',
-            marginBottom: 26,
-            minHeight: 140,
+            marginBottom: 12,
+            minHeight: 70,
           }}
         >
-          <div style={{ ...sectionLabel, color: '#1d4ed8' }}>Doctor&apos;s Prescription / Advice</div>
-          <div style={{ fontSize: 12.5, color: '#1e293b', whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>
-            {request.doctor_prescription?.trim() || 'No prescription recorded yet.'}
+          <div style={{ ...sectionLabel, color: '#1d4ed8' }}>
+            2 · Doctor&apos;s Recommendation / Advice
           </div>
+          <div style={{ fontSize: 12.5, color: '#1e293b', whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>
+            {request.doctor_prescription?.trim() || '—'}
+          </div>
+        </div>
+
+        {/* 3. Prescribed medicines */}
+        <div
+          style={{
+            border: '1.5px solid #bbf7d0',
+            background: '#f0fdf4',
+            borderRadius: 5,
+            padding: '12px 14px',
+            marginBottom: 12,
+          }}
+        >
+          <div style={{ ...sectionLabel, color: '#15803d' }}>3 · Prescribed Medicines</div>
+          {medicines.length === 0 ? (
+            <div style={{ fontSize: 12, color: '#64748b' }}>—</div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={{ padding: '4px 8px', fontSize: 9.5, textAlign: 'left', color: '#15803d', borderBottom: '1px solid #bbf7d0' }}>#</th>
+                  <th style={{ padding: '4px 8px', fontSize: 9.5, textAlign: 'left', color: '#15803d', borderBottom: '1px solid #bbf7d0' }}>Medicine</th>
+                  <th style={{ padding: '4px 8px', fontSize: 9.5, textAlign: 'left', color: '#15803d', borderBottom: '1px solid #bbf7d0' }}>When to Take</th>
+                  <th style={{ padding: '4px 8px', fontSize: 9.5, textAlign: 'left', color: '#15803d', borderBottom: '1px solid #bbf7d0' }}>Instruction</th>
+                </tr>
+              </thead>
+              <tbody>
+                {medicines.map((m, i) => (
+                  <tr key={m.id}>
+                    <td style={{ padding: '5px 8px', fontSize: 11, borderBottom: '1px solid #dcfce7' }}>
+                      {i + 1}
+                    </td>
+                    <td style={{ padding: '5px 8px', fontSize: 11.5, fontWeight: 700, borderBottom: '1px solid #dcfce7' }}>
+                      {m.medicine_name}
+                      {m.strength ? ` ${m.strength}` : ''}
+                      {m.form ? (
+                        <span style={{ fontWeight: 400, color: '#64748b' }}> ({m.form})</span>
+                      ) : null}
+                    </td>
+                    <td style={{ padding: '5px 8px', fontSize: 11, color: '#166534', borderBottom: '1px solid #dcfce7' }}>
+                      {rxTiming(m)}
+                    </td>
+                    <td style={{ padding: '5px 8px', fontSize: 10.5, color: '#475569', borderBottom: '1px solid #dcfce7' }}>
+                      {m.instruction ?? '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* 4. Suggested tests */}
+        <div
+          style={{
+            border: '1px solid #e9d5ff',
+            background: '#faf5ff',
+            borderRadius: 5,
+            padding: '12px 14px',
+            marginBottom: 22,
+          }}
+        >
+          <div style={{ ...sectionLabel, color: '#7e22ce' }}>4 · Suggested Tests</div>
+          {suggestedTests.length === 0 ? (
+            <div style={{ fontSize: 12, color: '#64748b' }}>—</div>
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {suggestedTests.map((t) => (
+                <span
+                  key={t.id}
+                  style={{
+                    fontSize: 10.5,
+                    background: '#fff',
+                    border: '1px solid #e9d5ff',
+                    borderRadius: 999,
+                    padding: '3px 10px',
+                    color: '#581c87',
+                  }}
+                >
+                  <span style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 700 }}>
+                    {t.test?.code}
+                  </span>{' '}
+                  {t.test?.name}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Doctor signature */}

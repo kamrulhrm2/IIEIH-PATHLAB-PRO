@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, ChevronDown, ChevronUp, FileDown, FileText, FlaskConical, Info, Loader2, Plus, Stethoscope, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, FileDown, FileText, FlaskConical, Info, Loader2, Pill, Plus, Stethoscope, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -43,6 +44,11 @@ import type { RequestSummary, TestApproval } from '@/types';
 
 import { RequisitionSlip, downloadSlipPdf } from '@/components/shared/RequisitionSlip';
 import { PrescriptionSlip, downloadPrescriptionPdf } from '@/components/shared/PrescriptionSlip';
+import {
+  useMedicines,
+  useSaveRequestMedicines,
+  type NewRequestMedicine,
+} from '@/hooks/useMedicines';
 
 const APPROVAL_STYLES: Record<TestApproval, string> = {
   pending: 'bg-slate-100 text-slate-600 border-slate-200',
@@ -52,6 +58,28 @@ const APPROVAL_STYLES: Record<TestApproval, string> = {
 };
 
 const STEPS = ['Created', 'Doctor', 'HR', 'Medical', 'Pathology', 'Done'];
+
+const TIMING_FIELDS = [
+  { key: 't_morning', label: 'Morning' },
+  { key: 't_afternoon', label: 'Afternoon' },
+  { key: 't_evening', label: 'Evening' },
+  { key: 't_night', label: 'Night' },
+] as const;
+
+export const timingLabel = (m: {
+  t_morning: boolean;
+  t_afternoon: boolean;
+  t_evening: boolean;
+  t_night: boolean;
+}) =>
+  [
+    m.t_morning && 'Morning',
+    m.t_afternoon && 'Afternoon',
+    m.t_evening && 'Evening',
+    m.t_night && 'Night',
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
 function deriveStep(status: RequestSummary['status']): { index: number; rejected: boolean } {
   switch (status) {
@@ -102,6 +130,7 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
   const [slipBusy, setSlipBusy] = useState(false);
   const [rxBusy, setRxBusy] = useState(false);
   const [prescription, setPrescription] = useState('');
+  const [rxMeds, setRxMeds] = useState<NewRequestMedicine[]>([]);
   const [addingTest, setAddingTest] = useState(false);
 
   const role = user?.role;
@@ -143,6 +172,24 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
 
   const tests = detail?.tests ?? [];
   const timeline = detail?.timeline ?? [];
+  const rxMedsSaved = detail?.medicines ?? [];
+
+  // Medicine library for the doctor's prescription picker
+  const { data: medicineLib = [] } = useMedicines();
+  const saveRequestMeds = useSaveRequestMedicines();
+
+  // Prefill the doctor's medicine editor once per request from saved rows
+  const [medsLoadedFor, setMedsLoadedFor] = useState<string | null>(null);
+  useEffect(() => {
+    if (!request || !detail) return;
+    if (medsLoadedFor === request.id) return;
+    setRxMeds(
+      (detail.medicines ?? []).map(
+        ({ id: _i, request_id: _r, created_at: _c, ...rest }) => rest
+      )
+    );
+    setMedsLoadedFor(request.id);
+  }, [request, detail, medsLoadedFor]);
 
   // Doctor-only: edit the test set before approving. Remove is the primary control;
   // adding is an explicit provision for when an extra test is required.
@@ -164,6 +211,8 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
     if (!request) return;
     setNote('');
     setPrescription(request.doctor_prescription ?? '');
+    setRxMeds([]);
+    setMedsLoadedFor(null);
     setShowTimeline(false);
     setShowQuota(false);
     setSlipBusy(false);
@@ -199,9 +248,15 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
     onClose();
   };
 
-  const handleDoctorApprove = () => {
+  const handleDoctorApprove = async () => {
     if (checkedRows.length === 0) {
       toast.error('Select at least one test to approve');
+      return;
+    }
+    // Persist prescribed medicines first; abort on failure (hook shows the error)
+    try {
+      await saveRequestMeds.mutateAsync({ requestId: request.id, rows: rxMeds });
+    } catch {
       return;
     }
     const allChecked = checkedRows.length === tests.length;
@@ -225,7 +280,12 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
     );
   };
 
-  const handleDoctorReject = () => {
+  const handleDoctorReject = async () => {
+    try {
+      await saveRequestMeds.mutateAsync({ requestId: request.id, rows: rxMeds });
+    } catch {
+      return;
+    }
     action.mutate(
       {
         request,
@@ -735,7 +795,7 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
           {!hideClinicalInfo && request.doctor_prescription && !canDoctorAct && (
             <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
               <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-blue-600">
-                <Stethoscope className="h-3.5 w-3.5" /> Doctor&apos;s Prescription / Advice
+                <Stethoscope className="h-3.5 w-3.5" /> Doctor&apos;s Recommendation / Advice
               </p>
               <p className="whitespace-pre-wrap text-sm text-slate-800">
                 {request.doctor_prescription}
@@ -746,6 +806,30 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
                   {request.doctor_at ? ` · ${formatDateTime(request.doctor_at)}` : ''}
                 </p>
               )}
+            </div>
+          )}
+          {!hideClinicalInfo && !canDoctorAct && rxMedsSaved.length > 0 && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+              <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-blue-600">
+                <Pill className="h-3.5 w-3.5" /> Prescribed Medicines
+              </p>
+              <div className="space-y-1.5">
+                {rxMedsSaved.map((m) => (
+                  <div key={m.id} className="text-sm">
+                    <span className="font-semibold text-slate-800">
+                      {m.medicine_name}
+                      {m.strength ? ` ${m.strength}` : ''}
+                    </span>
+                    {m.form && <span className="text-xs text-slate-500"> ({m.form})</span>}
+                    <span className="ml-2 text-xs font-medium text-blue-700">
+                      {timingLabel(m) || 'As directed'}
+                    </span>
+                    {m.instruction && (
+                      <span className="ml-2 text-xs text-slate-500">· {m.instruction}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -782,15 +866,106 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
           {canDoctorAct && (
             <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3">
               <p className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-blue-700">
-                <Stethoscope className="h-3.5 w-3.5" /> Doctor&apos;s Prescription / Advice
+                <Stethoscope className="h-3.5 w-3.5" /> Doctor&apos;s Recommendation / Advice
               </p>
               <Textarea
                 value={prescription}
                 onChange={(e) => setPrescription(e.target.value)}
-                placeholder="Write the prescription or medical advice for the patient... (saved with your decision; visible to the patient, hidden from pathology)"
-                rows={4}
+                placeholder="Write your recommendation or medical advice for the patient... (saved with your decision; visible to the patient, hidden from pathology)"
+                rows={3}
                 className="bg-white"
               />
+
+              {/* Prescribed medicines builder */}
+              <p className="mb-1.5 mt-3 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-blue-700">
+                <Pill className="h-3.5 w-3.5" /> Prescribed Medicines
+              </p>
+              <div className="space-y-2">
+                {rxMeds.map((m, i) => (
+                  <div key={`${m.medicine_name}-${i}`} className="rounded-md border border-blue-200 bg-white p-2.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-semibold text-slate-800">
+                        {m.medicine_name}
+                        {m.strength && (
+                          <span className="font-normal text-slate-500"> · {m.strength}</span>
+                        )}
+                        {m.form && <span className="font-normal text-slate-400"> · {m.form}</span>}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setRxMeds((r) => r.filter((_, x) => x !== i))}
+                        className="text-slate-400 hover:text-red-500"
+                        aria-label={`Remove ${m.medicine_name}`}
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                        When to take:
+                      </span>
+                      {TIMING_FIELDS.map(({ key, label }) => (
+                        <label
+                          key={key}
+                          className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-600"
+                        >
+                          <Checkbox
+                            checked={m[key]}
+                            onCheckedChange={(v) =>
+                              setRxMeds((r) =>
+                                r.map((row, x) => (x === i ? { ...row, [key]: v === true } : row))
+                              )
+                            }
+                          />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+                    <Input
+                      className="mt-2 h-8 bg-white text-xs"
+                      placeholder="Instruction (e.g. after meal, for 7 days)"
+                      value={m.instruction ?? ''}
+                      onChange={(e) =>
+                        setRxMeds((r) =>
+                          r.map((row, x) =>
+                            x === i ? { ...row, instruction: e.target.value || null } : row
+                          )
+                        )
+                      }
+                    />
+                  </div>
+                ))}
+                <SearchableSelect
+                  options={medicineLib
+                    .filter((md) => !rxMeds.some((r) => r.medicine_id === md.id))
+                    .map((md) => ({
+                      value: md.id,
+                      label: [md.name, md.strength].filter(Boolean).join(' '),
+                      sub: [md.generic_name, md.form].filter(Boolean).join(' · ') || undefined,
+                    }))}
+                  value={null}
+                  onChange={(id) => {
+                    const md = medicineLib.find((x) => x.id === id);
+                    if (!md) return;
+                    setRxMeds((r) => [
+                      ...r,
+                      {
+                        medicine_id: md.id,
+                        medicine_name: md.name,
+                        strength: md.strength,
+                        form: md.form,
+                        t_morning: false,
+                        t_afternoon: false,
+                        t_evening: false,
+                        t_night: false,
+                        instruction: null,
+                      },
+                    ]);
+                  }}
+                  placeholder="Search medicine library to add..."
+                  emptyText="No medicines in the library — ask admin to add some"
+                />
+              </div>
             </div>
           )}
           {hasAction && (
@@ -899,7 +1074,9 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
 
       {/* Off-screen documents — captured by html2canvas on demand */}
       {canPrint && <RequisitionSlip request={request} tests={tests} />}
-      {canDownloadRx && <PrescriptionSlip request={request} />}
+      {canDownloadRx && (
+        <PrescriptionSlip request={request} tests={tests} medicines={rxMedsSaved} />
+      )}
     </>
   );
 }

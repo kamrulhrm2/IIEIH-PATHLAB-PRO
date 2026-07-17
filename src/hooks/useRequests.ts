@@ -9,6 +9,7 @@ import type {
   PathRequest,
   QueueMode,
   RelationType,
+  RequestMedicine,
   RequestSummary,
   RequestTest,
   TestApproval,
@@ -79,7 +80,7 @@ export function useRequestDetail(requestId: string | null | undefined) {
     queryKey: ['request-detail', requestId],
     enabled: !!requestId,
     queryFn: async () => {
-      const [testsRes, tlRes] = await Promise.all([
+      const [testsRes, tlRes, medsRes] = await Promise.all([
         supabase
           .from('request_tests')
           .select('*, test:tests(*)')
@@ -90,12 +91,19 @@ export function useRequestDetail(requestId: string | null | undefined) {
           .select('*')
           .eq('request_id', requestId!)
           .order('created_at'),
+        supabase
+          .from('request_medicines')
+          .select('*')
+          .eq('request_id', requestId!)
+          .order('created_at'),
       ]);
       if (testsRes.error) throw testsRes.error;
       if (tlRes.error) throw tlRes.error;
+      if (medsRes.error) throw medsRes.error;
       return {
         tests: testsRes.data as unknown as RequestTest[],
         timeline: tlRes.data as TimelineEvent[],
+        medicines: medsRes.data as RequestMedicine[],
       };
     },
   });

@@ -8,6 +8,7 @@ import DashboardPage from '@/pages/DashboardPage';
 import EmployeesPage from '@/pages/EmployeesPage';
 import DependentsPage from '@/pages/DependentsPage';
 import TestLibraryPage from '@/pages/TestLibraryPage';
+import MedicineLibraryPage from '@/pages/MedicineLibraryPage';
 import NewRequestPage from '@/pages/NewRequestPage';
 import RequestsPage from '@/pages/RequestsPage';
 import UsersPage from '@/pages/UsersPage';
@@ -62,6 +63,14 @@ export default function App() {
           element={
             <Protected roles={['admin']}>
               <TestLibraryPage />
+            </Protected>
+          }
+        />
+        <Route
+          path="/medicines"
+          element={
+            <Protected roles={['admin', 'doctor']}>
+              <MedicineLibraryPage />
             </Protected>
           }
         />

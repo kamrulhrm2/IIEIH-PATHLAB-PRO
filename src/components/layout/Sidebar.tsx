@@ -14,6 +14,7 @@ import {
   Lock,
   LogOut,
   Microscope,
+  Pill,
   Stethoscope,
   UserCheck,
   Users,
@@ -47,6 +48,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/employees', label: 'Employees', icon: UserCheck, roles: ['admin', 'hr'] },
   { to: '/dependents', label: 'Dependents', icon: Heart, roles: ['admin', 'hr', 'doctor', 'pathologist', 'medical', 'user'] },
   { to: '/tests', label: 'Test Library', icon: FlaskConical, roles: ['admin'] },
+  { to: '/medicines', label: 'Medicine Library', icon: Pill, roles: ['admin', 'doctor'] },
   { to: '/users', label: 'System Users', icon: Lock, roles: ['admin'] },
   { to: '/reports', label: 'Reports', icon: BarChart3, roles: ['admin'] },
 ];
