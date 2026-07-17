@@ -32,6 +32,19 @@ export async function downloadSlipPdf(slipName: string): Promise<void> {
   const slip = document.getElementById(SLIP_ID);
   if (!slip) throw new Error('Slip document not found — please reopen the request and try again');
 
+  // Make sure every image in the slip (e.g. the logo) has finished loading
+  // before rasterizing, so it always appears in the PDF.
+  await Promise.all(
+    Array.from(slip.querySelectorAll('img')).map((img) =>
+      img.complete
+        ? Promise.resolve()
+        : new Promise<void>((resolve) => {
+            img.onload = () => resolve();
+            img.onerror = () => resolve();
+          })
+    )
+  );
+
   // PDF libraries are heavy (~570 KB) — load them on demand so they stay out of the main bundle.
   const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
     import('html2canvas'),
@@ -122,26 +135,21 @@ export function RequisitionSlip({ request, tests }: RequisitionSlipProps) {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <svg
-              width="50"
-              height="50"
-              viewBox="0 0 50 50"
-              xmlns="http://www.w3.org/2000/svg"
-              style={{ flexShrink: 0, borderRadius: 4 }}
-              aria-label="PathLab Pro logo"
-            >
-              <defs>
-                <linearGradient id="pathlab-slip-logo-grad" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0%" stopColor="#0ea5e9" />
-                  <stop offset="100%" stopColor="#06b6d4" />
-                </linearGradient>
-              </defs>
-              <rect width="50" height="50" rx="10" fill="url(#pathlab-slip-logo-grad)" />
-              <g transform="translate(25 25)">
-                <rect x="-3" y="-13" width="6" height="26" rx="1" fill="#fff" />
-                <rect x="-13" y="-3" width="26" height="6" rx="1" fill="#fff" />
-              </g>
-            </svg>
+            {/* Organization logo — same asset as the favicon / login page logo.
+                Same-origin image, so html2canvas captures it without tainting. */}
+            <img
+              src="/favicon.ico"
+              alt="PathLab Pro logo"
+              width={50}
+              height={50}
+              style={{
+                width: 50,
+                height: 50,
+                flexShrink: 0,
+                borderRadius: 8,
+                objectFit: 'contain',
+              }}
+            />
             <div>
               <div style={{ fontSize: 18, fontWeight: 800, color: '#0f172a' }}>PathLab Pro</div>
               <div style={{ fontSize: 10, color: '#64748b' }}>

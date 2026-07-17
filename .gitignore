@@ -7,3 +7,6 @@ dist-ssr
 
 # Unrelated nested repo
 Labtest/
+
+.vercel
+.env*

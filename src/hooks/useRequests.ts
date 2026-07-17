@@ -39,7 +39,15 @@ export function useRequestList(mode: QueueMode) {
           .order('created_at', { ascending: false })
           .range(from, from + REQUESTS_PAGE_SIZE - 1);
 
-        if (mode === 'mine') q = q.eq('requester_id', user!.id);
+        if (mode === 'mine') {
+          // "My Requests" = requests I submitted OR requests submitted on my behalf
+          // (someone else created it, but I am the employee it belongs to).
+          if (user!.emp_code) {
+            q = q.or(`requester_id.eq.${user!.id},employee_code.eq.${user!.emp_code}`);
+          } else {
+            q = q.eq('requester_id', user!.id);
+          }
+        }
         else if (mode === 'doctor') {
           q = q.eq('status', 'PENDING_DOCTOR');
           if (user!.role === 'doctor') q = q.eq('assigned_doctor_id', user!.id);

@@ -18,6 +18,7 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
+  LabelList,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -85,7 +86,14 @@ export default function DashboardPage() {
     () => requests.filter((r) => new Date(r.created_at).getFullYear() === year),
     [requests, year]
   );
-  const mine = useMemo(() => requests.filter((r) => r.requester_id === user!.id), [requests, user]);
+  // Mine = requests I submitted OR requests submitted on my behalf (I am the employee)
+  const mine = useMemo(
+    () =>
+      requests.filter(
+        (r) => r.requester_id === user!.id || (!!user!.emp_code && r.employee_code === user!.emp_code)
+      ),
+    [requests, user]
+  );
 
   const remaining = Math.max(quotaLimit - myUsage, 0);
 
@@ -251,7 +259,7 @@ export default function DashboardPage() {
               <Skeleton className="h-[240px] w-full" />
             ) : (
               <ResponsiveContainer width="100%" height={240}>
-                <AreaChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                <AreaChart data={chartData} margin={{ top: 18, right: 10, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#64748b' }} />
                   <YAxis tick={{ fontSize: 11, fill: '#64748b' }} allowDecimals={false} />
@@ -269,7 +277,14 @@ export default function DashboardPage() {
                     stroke="#3b82f6"
                     fill="#3b82f6"
                     fillOpacity={0.2}
-                  />
+                  >
+                    <LabelList
+                      dataKey="requests"
+                      position="top"
+                      style={{ fontSize: 10, fill: '#3b82f6', fontWeight: 600 }}
+                      formatter={(v: number) => (v > 0 ? v : '')}
+                    />
+                  </Area>
                   <Area
                     type="monotone"
                     dataKey="completed"
@@ -277,7 +292,14 @@ export default function DashboardPage() {
                     stroke="#10b981"
                     fill="#10b981"
                     fillOpacity={0.2}
-                  />
+                  >
+                    <LabelList
+                      dataKey="completed"
+                      position="bottom"
+                      style={{ fontSize: 10, fill: '#10b981', fontWeight: 600 }}
+                      formatter={(v: number) => (v > 0 ? v : '')}
+                    />
+                  </Area>
                 </AreaChart>
               </ResponsiveContainer>
             )}

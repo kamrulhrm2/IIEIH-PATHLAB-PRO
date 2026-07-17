@@ -19,6 +19,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  LabelList,
   Legend,
   Pie,
   PieChart,
@@ -383,15 +384,29 @@ export default function ReportsPage() {
               <Skeleton className="h-[260px] w-full" />
             ) : (
               <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={monthlyData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                <BarChart data={monthlyData} margin={{ top: 18, right: 10, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#64748b' }} />
                   <YAxis tick={{ fontSize: 11, fill: '#64748b' }} allowDecimals={false} />
                   <Tooltip
                     contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 12 }}
                   />
-                  <Bar dataKey="Requests" fill="#3b82f6" radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="Completed" fill="#10b981" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="Requests" fill="#3b82f6" radius={[3, 3, 0, 0]}>
+                    <LabelList
+                      dataKey="Requests"
+                      position="top"
+                      style={{ fontSize: 10, fill: '#3b82f6', fontWeight: 600 }}
+                      formatter={(v: number) => (v > 0 ? v : '')}
+                    />
+                  </Bar>
+                  <Bar dataKey="Completed" fill="#10b981" radius={[3, 3, 0, 0]}>
+                    <LabelList
+                      dataKey="Completed"
+                      position="top"
+                      style={{ fontSize: 10, fill: '#10b981', fontWeight: 600 }}
+                      formatter={(v: number) => (v > 0 ? v : '')}
+                    />
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -419,6 +434,8 @@ export default function ReportsPage() {
                     innerRadius={60}
                     outerRadius={90}
                     paddingAngle={2}
+                    label={({ value }: { value: number }) => value}
+                    labelLine={{ stroke: '#cbd5e1', strokeWidth: 1 }}
                   >
                     {statusData.map((s) => (
                       <Cell key={s.name} fill={s.color} />
