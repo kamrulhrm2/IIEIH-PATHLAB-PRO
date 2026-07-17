@@ -257,6 +257,7 @@ export function RequisitionSlip({ request, tests }: RequisitionSlipProps) {
               <th style={{ padding: '7px 10px', fontSize: 10, textAlign: 'left' }}>Code</th>
               <th style={{ padding: '7px 10px', fontSize: 10, textAlign: 'left' }}>Test Name</th>
               <th style={{ padding: '7px 10px', fontSize: 10, textAlign: 'left' }}>Category</th>
+              <th style={{ padding: '7px 10px', fontSize: 10, textAlign: 'left' }}>Sample Collected By</th>
               <th style={{ padding: '7px 10px', fontSize: 10, textAlign: 'right' }}>Price (৳)</th>
             </tr>
           </thead>
@@ -293,6 +294,25 @@ export function RequisitionSlip({ request, tests }: RequisitionSlipProps) {
                 <td
                   style={{
                     padding: '6px 10px',
+                    fontSize: 10,
+                    color: '#475569',
+                    borderBottom: '1px solid #f1f5f9',
+                  }}
+                >
+                  {t.collected_by_name ? (
+                    <>
+                      {t.collected_by_name}
+                      {t.collected_at ? (
+                        <span style={{ color: '#94a3b8' }}> · {formatDate(t.collected_at)}</span>
+                      ) : null}
+                    </>
+                  ) : (
+                    '—'
+                  )}
+                </td>
+                <td
+                  style={{
+                    padding: '6px 10px',
                     fontSize: 11,
                     textAlign: 'right',
                     borderBottom: '1px solid #f1f5f9',
@@ -303,7 +323,7 @@ export function RequisitionSlip({ request, tests }: RequisitionSlipProps) {
               </tr>
             ))}
             <tr style={{ background: '#f1f5f9', borderTop: '2px solid #cbd5e1', fontWeight: 700 }}>
-              <td colSpan={4} style={{ padding: '7px 10px', fontSize: 11, textAlign: 'right' }}>
+              <td colSpan={5} style={{ padding: '7px 10px', fontSize: 11, textAlign: 'right' }}>
                 Total Amount
               </td>
               <td style={{ padding: '7px 10px', fontSize: 12, textAlign: 'right' }}>

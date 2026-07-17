@@ -148,6 +148,9 @@ export interface RequestTest {
   request_id: string;
   test_id: string;
   approval: TestApproval;
+  collected_by_id: string | null;
+  collected_by_name: string | null;
+  collected_at: string | null;
   created_at: string;
   updated_at: string;
   test: LabTest;

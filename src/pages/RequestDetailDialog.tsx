@@ -30,6 +30,7 @@ import { useTests } from '@/hooks/useTests';
 import { useQuotaLimit } from '@/hooks/useSettings';
 import {
   useAddRequestTest,
+  useCollectSamples,
   useEmployeeUsage,
   useEmployeeYearRequests,
   useRemoveRequestTest,
@@ -89,6 +90,7 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
   const { user } = useAuth();
   const { data: detail, isLoading } = useRequestDetail(request?.id);
   const action = useRequestAction();
+  const collectSamples = useCollectSamples();
   const { data: quotaLimit = 5 } = useQuotaLimit();
   const addTest = useAddRequestTest();
   const removeTest = useRemoveRequestTest();
@@ -125,7 +127,7 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
     !!request &&
     (status === 'COMPLETED' || canPathAct || canCollectSample) &&
     (role === 'admin' || role === 'pathologist');
-  const showCheckboxes = canDoctorAct || canPathAct;
+  const showCheckboxes = canDoctorAct || canPathAct || canCollectSample;
 
   // Task 3: patient complaint + doctor prescription are hidden from the pathology view.
   const hideClinicalInfo = role === 'pathologist';
@@ -177,11 +179,12 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
     const next: Record<string, boolean> = {};
     for (const t of tests) {
       if (canDoctorAct) next[t.id] = true;
+      else if (canCollectSample) next[t.id] = t.approval === 'approved' && !t.collected_at;
       else if (canPathAct) next[t.id] = t.approval === 'approved';
       else next[t.id] = false;
     }
     setChecked(next);
-  }, [request?.id, tests.length, canDoctorAct, canPathAct]);
+  }, [request?.id, tests.length, canDoctorAct, canPathAct, canCollectSample]);
 
   const checkedRows = useMemo(() => tests.filter((t) => checked[t.id]), [tests, checked]);
   const selectedTotal = checkedRows.reduce((sum, t) => sum + Number(t.test?.price ?? 0), 0);
@@ -323,20 +326,35 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
     );
   };
 
-  // Pathologist confirms physical samples were collected — request advances to SAMPLE_COLLECTED.
-  const handleSampleCollection = () => {
-    action.mutate(
+  // Per-test sample collection: each pathologist ticks the samples THEY collected.
+  // Each test records collected_by + collected_at; the request advances to
+  // SAMPLE_COLLECTED only once every approved test has been collected.
+  const collectibleRows = tests.filter((t) => t.approval === 'approved' && !t.collected_at);
+  const collectedCount = tests.filter((t) => t.approval === 'approved' && !!t.collected_at).length;
+  const approvedCount = tests.filter((t) => t.approval === 'approved').length;
+
+  const handleCollectSamples = () => {
+    const collecting = collectibleRows.filter((t) => checked[t.id]);
+    if (collecting.length === 0) {
+      toast.error('Select at least one uncollected sample');
+      return;
+    }
+    collectSamples.mutate(
       {
         request,
-        stage: 'SAMPLE_COLLECTED',
-        updates: {
-          status: 'SAMPLE_COLLECTED',
-          pathologist_name: user!.name,
-          pathologist_at: now(),
-        },
+        testIds: collecting.map((t) => t.id),
+        testCodes: collecting.map((t) => t.test?.code ?? '?'),
+        remainingBefore: collectibleRows.length,
         note,
       },
-      { onSuccess: () => finish(`Sample collection recorded for ${request.req_no}`) }
+      {
+        onSuccess: (res) =>
+          finish(
+            res.allCollected
+              ? `All samples collected for ${request.req_no} — ready for report delivery`
+              : `${collecting.length} sample(s) collected for ${request.req_no} (${collectedCount + collecting.length}/${approvedCount} done)`
+          ),
+      }
     );
   };
 
@@ -565,14 +583,18 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
                   ))}
                 {!isLoading &&
                   tests.map((t) => {
-                    const checkboxDisabled = canPathAct && t.approval !== 'approved' && t.approval !== 'completed';
+                    const checkboxDisabled = canCollectSample
+                      ? t.approval !== 'approved' || !!t.collected_at
+                      : canPathAct
+                        ? t.approval !== 'approved'
+                        : false;
                     return (
                       <TableRow key={t.id}>
                         {showCheckboxes && (
                           <TableCell>
                             <Checkbox
                               checked={!!checked[t.id]}
-                              disabled={canPathAct ? t.approval !== 'approved' : false}
+                              disabled={checkboxDisabled}
                               onCheckedChange={(v) =>
                                 setChecked((c) => ({ ...c, [t.id]: v === true }))
                               }
@@ -593,6 +615,12 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
                           <Badge variant="outline" className={APPROVAL_STYLES[t.approval]}>
                             {t.approval}
                           </Badge>
+                          {t.collected_at && (
+                            <p className="mt-1 text-[10px] leading-tight text-slate-500">
+                              <Check className="mr-0.5 inline h-3 w-3 text-emerald-600" />
+                              {t.collected_by_name} · {formatDateTime(t.collected_at)}
+                            </p>
+                          )}
                         </TableCell>
                         {canEditTests && (
                           <TableCell>
@@ -818,14 +846,25 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
                 </>
               )}
               {canCollectSample && (
-                <Button variant="success" onClick={handleSampleCollection} disabled={action.isPending}>
-                  {action.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <FlaskConical className="h-4 w-4" />
+                <>
+                  {collectedCount > 0 && (
+                    <span className="self-center text-xs font-medium text-slate-500">
+                      Samples collected: {collectedCount}/{approvedCount}
+                    </span>
                   )}
-                  Sample Collection
-                </Button>
+                  <Button
+                    variant="success"
+                    onClick={handleCollectSamples}
+                    disabled={collectSamples.isPending || collectibleRows.length === 0}
+                  >
+                    {collectSamples.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <FlaskConical className="h-4 w-4" />
+                    )}
+                    Collect Samples ({collectibleRows.filter((t) => checked[t.id]).length})
+                  </Button>
+                </>
               )}
               {canPathAct && (
                 <Button variant="success" onClick={handleReportDelivered} disabled={action.isPending}>

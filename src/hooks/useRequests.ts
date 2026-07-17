@@ -241,6 +241,74 @@ export function useSubmitRequest() {
   });
 }
 
+/**
+ * Per-test sample collection. A pathologist marks the samples THEY collected;
+ * each test row records collected_by + collected_at. When the last approved
+ * test is collected, the request advances to SAMPLE_COLLECTED. Every collection
+ * action is logged in the timeline under the acting pathologist's name.
+ */
+export function useCollectSamples() {
+  const { user } = useAuth();
+  return useMutation({
+    mutationFn: async (input: {
+      request: PathRequest;
+      testIds: string[];
+      testCodes: string[];
+      remainingBefore: number; // approved & uncollected count before this action
+      note?: string;
+    }) => {
+      if (!user) throw new Error('Not authenticated');
+      const nowIso = new Date().toISOString();
+
+      const { error: testsError } = await supabase
+        .from('request_tests')
+        .update({
+          collected_by_id: user.id,
+          collected_by_name: user.name,
+          collected_at: nowIso,
+        })
+        .in('id', input.testIds);
+      if (testsError) throw testsError;
+
+      const allCollected = input.testIds.length >= input.remainingBefore;
+      if (allCollected) {
+        const { error: reqError } = await supabase
+          .from('requests')
+          .update({
+            status: 'SAMPLE_COLLECTED',
+            pathologist_name: user.name,
+            pathologist_at: nowIso,
+          })
+          .eq('id', input.request.id);
+        if (reqError) throw reqError;
+      }
+
+      const { error: tlError } = await supabase.from('request_timeline').insert({
+        request_id: input.request.id,
+        stage: 'SAMPLE_COLLECTED',
+        actor_id: user.id,
+        actor_name: user.name,
+        actor_role: user.role,
+        note: [
+          `Collected ${input.testIds.length} sample(s): ${input.testCodes.join(', ')}`,
+          allCollected ? 'All samples collected' : 'Partial collection',
+          input.note?.trim() || null,
+        ]
+          .filter(Boolean)
+          .join(' — '),
+      });
+      if (tlError) throw tlError;
+
+      return { allCollected };
+    },
+    onSuccess: (_res, input) => {
+      queryClient.invalidateQueries({ queryKey: ['requests'] });
+      queryClient.invalidateQueries({ queryKey: ['request-detail', input.request.id] });
+    },
+    onError: (e: Error) => toast.error(`Sample collection failed — ${e.message}`),
+  });
+}
+
 export interface RequestActionInput {
   request: PathRequest;
   updates: Partial<PathRequest>;
