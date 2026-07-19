@@ -43,7 +43,19 @@ import { calcAge, cn, formatCurrency, formatDate, formatDateTime, titleCase } fr
 import type { RequestSummary, TestApproval } from '@/types';
 
 import { RequisitionSlip, downloadSlipPdf } from '@/components/shared/RequisitionSlip';
-import { PrescriptionSlip, downloadPrescriptionPdf } from '@/components/shared/PrescriptionSlip';
+import {
+  PrescriptionSlip,
+  downloadPrescriptionPdf,
+  doseNotation,
+  doseDetail,
+} from '@/components/shared/PrescriptionSlip';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   useMedicines,
   useSaveRequestMedicines,
@@ -65,21 +77,6 @@ const TIMING_FIELDS = [
   { key: 't_evening', label: 'Evening' },
   { key: 't_night', label: 'Night' },
 ] as const;
-
-export const timingLabel = (m: {
-  t_morning: boolean;
-  t_afternoon: boolean;
-  t_evening: boolean;
-  t_night: boolean;
-}) =>
-  [
-    m.t_morning && 'Morning',
-    m.t_afternoon && 'Afternoon',
-    m.t_evening && 'Evening',
-    m.t_night && 'Night',
-  ]
-    .filter(Boolean)
-    .join(' · ');
 
 function deriveStep(status: RequestSummary['status']): { index: number; rejected: boolean } {
   switch (status) {
@@ -814,16 +811,19 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
                 <Pill className="h-3.5 w-3.5" /> Prescribed Medicines
               </p>
               <div className="space-y-1.5">
-                {rxMedsSaved.map((m) => (
+                {rxMedsSaved.map((m, i) => (
                   <div key={m.id} className="text-sm">
                     <span className="font-semibold text-slate-800">
-                      {m.medicine_name}
+                      {i + 1}. {m.medicine_name}
                       {m.strength ? ` ${m.strength}` : ''}
                     </span>
                     {m.form && <span className="text-xs text-slate-500"> ({m.form})</span>}
-                    <span className="ml-2 text-xs font-medium text-blue-700">
-                      {timingLabel(m) || 'As directed'}
+                    <span className="ml-2 font-mono text-xs font-bold text-blue-800">
+                      : {doseNotation(m) || 'As directed'}
                     </span>
+                    {doseDetail(m) && (
+                      <span className="ml-1.5 text-xs text-slate-600">{doseDetail(m)}</span>
+                    )}
                     {m.instruction && (
                       <span className="ml-2 text-xs text-slate-500">· {m.instruction}</span>
                     )}
@@ -900,9 +900,10 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
                         <X className="h-4 w-4" />
                       </button>
                     </div>
+                    {/* 1 · When to take */}
                     <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                        When to take:
+                      <span className="w-20 shrink-0 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                        When to take
                       </span>
                       {TIMING_FIELDS.map(({ key, label }) => (
                         <label
@@ -920,10 +921,74 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
                           {label}
                         </label>
                       ))}
+                      {doseNotation(m) && (
+                        <span className="ml-auto rounded bg-slate-900 px-2 py-0.5 font-mono text-xs font-bold text-white">
+                          {doseNotation(m)}
+                        </span>
+                      )}
                     </div>
+
+                    {/* 2 · Duration + 3 · Meal relation */}
+                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+                      <span className="w-20 shrink-0 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                        Duration
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <Input
+                          type="number"
+                          min={1}
+                          step={1}
+                          className="h-8 w-20 bg-white text-center text-xs font-semibold"
+                          placeholder="e.g. 7"
+                          value={m.duration_days ?? ''}
+                          onChange={(e) => {
+                            const n = parseInt(e.target.value, 10);
+                            setRxMeds((r) =>
+                              r.map((row, x) =>
+                                x === i
+                                  ? { ...row, duration_days: Number.isInteger(n) && n > 0 ? n : null }
+                                  : row
+                              )
+                            );
+                          }}
+                        />
+                        <span className="text-xs text-slate-500">days</span>
+                      </div>
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                        Meal
+                      </span>
+                      <Select
+                        value={m.meal_relation ?? 'none'}
+                        onValueChange={(v) =>
+                          setRxMeds((r) =>
+                            r.map((row, x) =>
+                              x === i
+                                ? {
+                                    ...row,
+                                    meal_relation:
+                                      v === 'none' ? null : (v as 'before' | 'after' | 'with'),
+                                  }
+                                : row
+                            )
+                          )
+                        }
+                      >
+                        <SelectTrigger className="h-8 w-36 bg-white text-xs">
+                          <SelectValue placeholder="—" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">—</SelectItem>
+                          <SelectItem value="before">Before meal</SelectItem>
+                          <SelectItem value="after">After meal</SelectItem>
+                          <SelectItem value="with">With meal</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* 4 · Extra instruction */}
                     <Input
                       className="mt-2 h-8 bg-white text-xs"
-                      placeholder="Instruction (e.g. after meal, for 7 days)"
+                      placeholder="Use instruction (optional — e.g. dissolve in water, avoid dairy)"
                       value={m.instruction ?? ''}
                       onChange={(e) =>
                         setRxMeds((r) =>
@@ -958,6 +1023,8 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
                         t_afternoon: false,
                         t_evening: false,
                         t_night: false,
+                        duration_days: null,
+                        meal_relation: null,
                         instruction: null,
                       },
                     ]);

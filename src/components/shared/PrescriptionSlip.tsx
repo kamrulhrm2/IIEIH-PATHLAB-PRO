@@ -1,21 +1,68 @@
 import { calcAge, formatDate, formatDateTime } from '@/lib/utils';
-import type { RequestMedicine, RequestSummary, RequestTest } from '@/types';
+import type { MealRelation, RequestMedicine, RequestSummary, RequestTest } from '@/types';
 
 /**
- * PrescriptionSlip — printable A4 document with the patient complaint and the
- * doctor's prescription/advice. Rendered off-screen; downloadPrescriptionPdf()
- * rasterizes it and saves it as a PDF. Intended for the patient/employee.
+ * PrescriptionSlip — classic two-column prescription pad, black & white
+ * (only the organization logo keeps its colors).
+ *
+ *   LEFT column : Patient Complaint + Doctor's Advice
+ *   RIGHT column: ℞ Prescribed Medicines (dose notation) + Suggested Tests
+ *
+ * Medicines render in standard notation:  1. Napa 500 mg — 1+0+1 (5 days, After meal)
  */
 
 const RX_ID = 'pathlab-prescription-slip';
 
-const sectionLabel: React.CSSProperties = {
+/**
+ * Standard dose notation from the timing flags.
+ * 3-part (Morning+Afternoon+Night) like "1+0+1" when Evening is unused,
+ * 4-part "1+0+1+1" when the doctor also ticked Evening.
+ */
+export function doseNotation(m: {
+  t_morning: boolean;
+  t_afternoon: boolean;
+  t_evening: boolean;
+  t_night: boolean;
+}): string {
+  const bit = (b: boolean) => (b ? '1' : '0');
+  const parts = m.t_evening
+    ? [m.t_morning, m.t_afternoon, m.t_evening, m.t_night]
+    : [m.t_morning, m.t_afternoon, m.t_night];
+  const s = parts.map(bit).join('+');
+  return /1/.test(s) ? s : '';
+}
+
+export function mealLabel(rel: MealRelation | null): string {
+  switch (rel) {
+    case 'before':
+      return 'Before meal';
+    case 'after':
+      return 'After meal';
+    case 'with':
+      return 'With meal';
+    default:
+      return '';
+  }
+}
+
+/** "(5 days, After meal)" — omits empty parts gracefully. */
+export function doseDetail(m: RequestMedicine): string {
+  const bits = [
+    m.duration_days ? `${m.duration_days} days` : null,
+    mealLabel(m.meal_relation) || null,
+  ].filter(Boolean);
+  return bits.length > 0 ? `(${bits.join(', ')})` : '';
+}
+
+const label: React.CSSProperties = {
   fontSize: 10,
   fontWeight: 700,
   textTransform: 'uppercase',
-  color: '#64748b',
-  letterSpacing: '.6px',
+  color: '#334155',
+  letterSpacing: '.8px',
   marginBottom: 6,
+  borderBottom: '1px solid #cbd5e1',
+  paddingBottom: 3,
 };
 
 export async function downloadPrescriptionPdf(fileName: string): Promise<void> {
@@ -70,16 +117,6 @@ export async function downloadPrescriptionPdf(fileName: string): Promise<void> {
   pdf.save(`${fileName}.pdf`);
 }
 
-const rxTiming = (m: RequestMedicine) =>
-  [
-    m.t_morning && 'Morning',
-    m.t_afternoon && 'Afternoon',
-    m.t_evening && 'Evening',
-    m.t_night && 'Night',
-  ]
-    .filter(Boolean)
-    .join(' · ') || 'As directed';
-
 interface PrescriptionSlipProps {
   request: RequestSummary;
   tests: RequestTest[];
@@ -87,7 +124,6 @@ interface PrescriptionSlipProps {
 }
 
 export function PrescriptionSlip({ request, tests, medicines }: PrescriptionSlipProps) {
-  // Suggested tests = the doctor-approved set (falls back to all pre-approval)
   const approvedTests = tests.filter(
     (t) => t.approval === 'approved' || t.approval === 'completed'
   );
@@ -115,7 +151,7 @@ export function PrescriptionSlip({ request, tests, medicines }: PrescriptionSlip
           fontFamily: "'Inter', system-ui, sans-serif",
         }}
       >
-        {/* Header */}
+        {/* Header — logo keeps its colors; everything else is B&W */}
         <div
           style={{
             display: 'flex',
@@ -123,7 +159,7 @@ export function PrescriptionSlip({ request, tests, medicines }: PrescriptionSlip
             alignItems: 'flex-end',
             borderBottom: '2.5px solid #0f172a',
             paddingBottom: 10,
-            marginBottom: 14,
+            marginBottom: 10,
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -136,188 +172,182 @@ export function PrescriptionSlip({ request, tests, medicines }: PrescriptionSlip
             />
             <div>
               <div style={{ fontSize: 18, fontWeight: 800, color: '#0f172a' }}>PathLab Pro</div>
-              <div style={{ fontSize: 10, color: '#64748b' }}>
+              <div style={{ fontSize: 10, color: '#475569' }}>
                 Employee Health Benefit Programme
               </div>
             </div>
           </div>
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: 14, fontWeight: 800, textTransform: 'uppercase' }}>
-              Doctor Advice / Prescription
+              Prescription
             </div>
-            <div style={{ fontSize: 10, color: '#64748b' }}>Ref: {request.req_no}</div>
-            <div style={{ fontSize: 10, color: '#64748b' }}>
+            <div style={{ fontSize: 10, color: '#475569' }}>Ref: {request.req_no}</div>
+            <div style={{ fontSize: 10, color: '#475569' }}>
               Date: {formatDate(request.doctor_at ?? request.created_at)}
             </div>
           </div>
         </div>
 
-        {/* Patient info strip */}
+        {/* Patient line */}
         <div
           style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            gap: 10,
-            marginBottom: 16,
+            display: 'flex',
+            justifyContent: 'space-between',
+            gap: 16,
+            borderBottom: '1px solid #0f172a',
+            paddingBottom: 8,
+            marginBottom: 0,
+            fontSize: 11.5,
           }}
         >
-          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 5, padding: '9px 12px' }}>
-            <div style={sectionLabel}>Patient</div>
-            <div style={{ fontSize: 13, fontWeight: 700 }}>{request.ben_name}</div>
-            <div style={{ fontSize: 10, color: '#64748b' }}>
-              Relation: {request.ben_relation} · Age: {calcAge(request.ben_dob)}
+          <span>
+            <span style={{ color: '#475569' }}>Patient: </span>
+            <span style={{ fontWeight: 700 }}>{request.ben_name}</span>
+            <span style={{ color: '#475569' }}>
+              {' '}
+              · {request.ben_relation} · Age: {calcAge(request.ben_dob)}
+            </span>
+          </span>
+          <span style={{ color: '#475569' }}>
+            Employee: <span style={{ fontWeight: 700, color: '#0f172a' }}>{request.employee_name}</span>{' '}
+            ({request.employee_code})
+          </span>
+        </div>
+
+        {/* Two-column prescription body */}
+        <div style={{ display: 'flex', minHeight: 430 }}>
+          {/* LEFT — complaint + advice (~38%) */}
+          <div
+            style={{
+              width: '38%',
+              borderRight: '1.5px solid #0f172a',
+              paddingRight: 16,
+              paddingTop: 14,
+            }}
+          >
+            <div style={{ marginBottom: 18 }}>
+              <div style={label}>Patient Complaint</div>
+              <div style={{ fontSize: 11.5, color: '#1e293b', whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>
+                {request.notes?.trim() || '—'}
+              </div>
+            </div>
+
+            <div>
+              <div style={label}>Doctor&apos;s Advice</div>
+              <div style={{ fontSize: 11.5, color: '#1e293b', whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>
+                {request.doctor_prescription?.trim() || '—'}
+              </div>
             </div>
           </div>
-          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 5, padding: '9px 12px' }}>
-            <div style={sectionLabel}>Employee (Sponsor)</div>
-            <div style={{ fontSize: 13, fontWeight: 700 }}>{request.employee_name}</div>
-            <div style={{ fontSize: 10, color: '#64748b' }}>
-              {[request.employee_code, request.department].filter(Boolean).join(' · ')}
+
+          {/* RIGHT — ℞ medicines + suggested tests (~62%) */}
+          <div style={{ flex: 1, paddingLeft: 18, paddingTop: 10 }}>
+            {/* Rx symbol */}
+            <div
+              style={{
+                fontSize: 30,
+                fontWeight: 800,
+                fontFamily: 'Georgia, serif',
+                color: '#0f172a',
+                marginBottom: 8,
+              }}
+            >
+              ℞
+            </div>
+
+            {/* Medicines in standard notation */}
+            {medicines.length === 0 ? (
+              <div style={{ fontSize: 11.5, color: '#64748b', marginBottom: 20 }}>
+                No medicines prescribed.
+              </div>
+            ) : (
+              <div style={{ marginBottom: 22 }}>
+                {medicines.map((m, i) => {
+                  const dose = doseNotation(m);
+                  const detail = doseDetail(m);
+                  return (
+                    <div key={m.id} style={{ marginBottom: 12 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a' }}>
+                        {i + 1}. {m.medicine_name}
+                        {m.strength ? ` ${m.strength}` : ''}
+                        {m.form ? (
+                          <span style={{ fontWeight: 400, color: '#475569' }}> ({m.form})</span>
+                        ) : null}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: '#1e293b',
+                          marginTop: 2,
+                          paddingLeft: 16,
+                          fontFamily: 'ui-monospace, monospace',
+                        }}
+                      >
+                        {dose || 'As directed'}
+                        {detail ? `  ${detail}` : ''}
+                      </div>
+                      {m.instruction && (
+                        <div style={{ fontSize: 10.5, color: '#475569', paddingLeft: 16, marginTop: 1 }}>
+                          {m.instruction}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Suggested tests */}
+            <div>
+              <div style={label}>Suggested Tests</div>
+              {suggestedTests.length === 0 ? (
+                <div style={{ fontSize: 11.5, color: '#64748b' }}>—</div>
+              ) : (
+                <div>
+                  {suggestedTests.map((t, i) => (
+                    <div key={t.id} style={{ fontSize: 11.5, color: '#1e293b', marginBottom: 4 }}>
+                      {i + 1}.{' '}
+                      <span style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 700 }}>
+                        {t.test?.code}
+                      </span>{' '}
+                      — {t.test?.name}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
-        </div>
-
-        {/* 1. Patient complaint */}
-        <div
-          style={{
-            border: '1px solid #e2e8f0',
-            borderRadius: 5,
-            padding: '12px 14px',
-            marginBottom: 12,
-            minHeight: 56,
-          }}
-        >
-          <div style={sectionLabel}>1 · Patient Complaint</div>
-          <div style={{ fontSize: 12, color: '#334155', whiteSpace: 'pre-wrap' }}>
-            {request.notes?.trim() || '—'}
-          </div>
-        </div>
-
-        {/* 2. Doctor recommendation */}
-        <div
-          style={{
-            border: '1.5px solid #bfdbfe',
-            background: '#eff6ff',
-            borderRadius: 5,
-            padding: '12px 14px',
-            marginBottom: 12,
-            minHeight: 70,
-          }}
-        >
-          <div style={{ ...sectionLabel, color: '#1d4ed8' }}>
-            2 · Doctor&apos;s Recommendation / Advice
-          </div>
-          <div style={{ fontSize: 12.5, color: '#1e293b', whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>
-            {request.doctor_prescription?.trim() || '—'}
-          </div>
-        </div>
-
-        {/* 3. Prescribed medicines */}
-        <div
-          style={{
-            border: '1.5px solid #bbf7d0',
-            background: '#f0fdf4',
-            borderRadius: 5,
-            padding: '12px 14px',
-            marginBottom: 12,
-          }}
-        >
-          <div style={{ ...sectionLabel, color: '#15803d' }}>3 · Prescribed Medicines</div>
-          {medicines.length === 0 ? (
-            <div style={{ fontSize: 12, color: '#64748b' }}>—</div>
-          ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr>
-                  <th style={{ padding: '4px 8px', fontSize: 9.5, textAlign: 'left', color: '#15803d', borderBottom: '1px solid #bbf7d0' }}>#</th>
-                  <th style={{ padding: '4px 8px', fontSize: 9.5, textAlign: 'left', color: '#15803d', borderBottom: '1px solid #bbf7d0' }}>Medicine</th>
-                  <th style={{ padding: '4px 8px', fontSize: 9.5, textAlign: 'left', color: '#15803d', borderBottom: '1px solid #bbf7d0' }}>When to Take</th>
-                  <th style={{ padding: '4px 8px', fontSize: 9.5, textAlign: 'left', color: '#15803d', borderBottom: '1px solid #bbf7d0' }}>Instruction</th>
-                </tr>
-              </thead>
-              <tbody>
-                {medicines.map((m, i) => (
-                  <tr key={m.id}>
-                    <td style={{ padding: '5px 8px', fontSize: 11, borderBottom: '1px solid #dcfce7' }}>
-                      {i + 1}
-                    </td>
-                    <td style={{ padding: '5px 8px', fontSize: 11.5, fontWeight: 700, borderBottom: '1px solid #dcfce7' }}>
-                      {m.medicine_name}
-                      {m.strength ? ` ${m.strength}` : ''}
-                      {m.form ? (
-                        <span style={{ fontWeight: 400, color: '#64748b' }}> ({m.form})</span>
-                      ) : null}
-                    </td>
-                    <td style={{ padding: '5px 8px', fontSize: 11, color: '#166534', borderBottom: '1px solid #dcfce7' }}>
-                      {rxTiming(m)}
-                    </td>
-                    <td style={{ padding: '5px 8px', fontSize: 10.5, color: '#475569', borderBottom: '1px solid #dcfce7' }}>
-                      {m.instruction ?? '—'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-
-        {/* 4. Suggested tests */}
-        <div
-          style={{
-            border: '1px solid #e9d5ff',
-            background: '#faf5ff',
-            borderRadius: 5,
-            padding: '12px 14px',
-            marginBottom: 22,
-          }}
-        >
-          <div style={{ ...sectionLabel, color: '#7e22ce' }}>4 · Suggested Tests</div>
-          {suggestedTests.length === 0 ? (
-            <div style={{ fontSize: 12, color: '#64748b' }}>—</div>
-          ) : (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {suggestedTests.map((t) => (
-                <span
-                  key={t.id}
-                  style={{
-                    fontSize: 10.5,
-                    background: '#fff',
-                    border: '1px solid #e9d5ff',
-                    borderRadius: 999,
-                    padding: '3px 10px',
-                    color: '#581c87',
-                  }}
-                >
-                  <span style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 700 }}>
-                    {t.test?.code}
-                  </span>{' '}
-                  {t.test?.name}
-                </span>
-              ))}
-            </div>
-          )}
         </div>
 
         {/* Doctor signature */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            borderTop: '1px solid #0f172a',
+            paddingTop: 22,
+            marginTop: 6,
+            marginBottom: 12,
+          }}
+        >
           <div style={{ textAlign: 'center', minWidth: 220 }}>
-            <div style={{ borderBottom: '1px solid #94a3b8', height: 34, marginBottom: 5 }} />
+            <div style={{ borderBottom: '1px solid #334155', height: 30, marginBottom: 5 }} />
             <div
               style={{
                 fontSize: 9,
                 fontWeight: 700,
                 textTransform: 'uppercase',
                 letterSpacing: '.6px',
-                color: '#64748b',
+                color: '#334155',
               }}
             >
               Doctor
             </div>
-            <div style={{ fontSize: 11, color: '#475569' }}>
+            <div style={{ fontSize: 11, color: '#1e293b' }}>
               {request.doctor_name ?? request.assigned_doctor_name ?? ''}
             </div>
             {request.doctor_at && (
-              <div style={{ fontSize: 9, color: '#94a3b8' }}>{formatDateTime(request.doctor_at)}</div>
+              <div style={{ fontSize: 9, color: '#64748b' }}>{formatDateTime(request.doctor_at)}</div>
             )}
           </div>
         </div>
@@ -327,14 +357,14 @@ export function PrescriptionSlip({ request, tests, medicines }: PrescriptionSlip
           style={{
             display: 'flex',
             justifyContent: 'space-between',
-            borderTop: '1px solid #e2e8f0',
+            borderTop: '1px solid #cbd5e1',
             paddingTop: 8,
           }}
         >
-          <span style={{ fontSize: 9, color: '#94a3b8' }}>
+          <span style={{ fontSize: 9, color: '#64748b' }}>
             Generated: {formatDateTime(new Date())} · PathLab Pro
           </span>
-          <span style={{ fontSize: 9, color: '#94a3b8' }}>
+          <span style={{ fontSize: 9, color: '#64748b' }}>
             Valid only with authorised signature
           </span>
         </div>

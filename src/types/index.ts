@@ -123,9 +123,13 @@ export interface RequestMedicine {
   t_afternoon: boolean;
   t_evening: boolean;
   t_night: boolean;
+  duration_days: number | null;
+  meal_relation: MealRelation | null;
   instruction: string | null;
   created_at: string;
 }
+
+export type MealRelation = 'before' | 'after' | 'with';
 
 export interface PathRequest {
   id: string;
