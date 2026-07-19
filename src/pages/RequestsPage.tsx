@@ -9,6 +9,7 @@ import {
   Download,
   FileText,
   Microscope,
+  Pill,
   Search,
   Stethoscope,
   Users,
@@ -52,6 +53,7 @@ const TITLES: Record<QueueMode, string> = {
   restricted: 'Restricted (Admin)',
   medical: 'Medical Service Queue',
   pathology: 'Pathology Queue',
+  pharmacy: 'Pharmacy Queue',
 };
 
 const ALL_STATUSES: RequestStatus[] = [
@@ -78,6 +80,7 @@ const MODE_STATUSES: Record<QueueMode, RequestStatus[]> = {
   restricted: ['HR_RESTRICTED', 'PENDING_ADMIN'],
   medical: ['PENDING_MEDICAL'],
   pathology: ['PENDING_PATHOLOGY', 'SAMPLE_COLLECTED', 'PATH_PARTIAL'],
+  pharmacy: ALL_STATUSES,
 };
 
 const EMPTY_CONFIG: Record<QueueMode, { icon: LucideIcon; title: string }> = {
@@ -88,6 +91,7 @@ const EMPTY_CONFIG: Record<QueueMode, { icon: LucideIcon; title: string }> = {
   restricted: { icon: AlertTriangle, title: 'No restricted requests' },
   medical: { icon: Activity, title: 'No pending medical service reviews' },
   pathology: { icon: Microscope, title: 'No pending pathology tests' },
+  pharmacy: { icon: Pill, title: 'No prescriptions awaiting dispensing' },
 };
 
 export default function RequestsPage({ mode }: { mode: QueueMode }) {

@@ -57,6 +57,8 @@ export function useRequestList(mode: QueueMode) {
         else if (mode === 'restricted') q = q.in('status', ['HR_RESTRICTED', 'PENDING_ADMIN']);
         else if (mode === 'medical') q = q.eq('status', 'PENDING_MEDICAL');
         else if (mode === 'pathology') q = q.in('status', ['PENDING_PATHOLOGY', 'SAMPLE_COLLECTED', 'PATH_PARTIAL']);
+        // Pharmacy queue: every request with a prescription, not yet dispensed
+        else if (mode === 'pharmacy') q = q.gt('medicine_count', 0).is('dispensed_at', null);
 
         const { data, error } = await q;
         if (error) throw error;
@@ -314,6 +316,48 @@ export function useCollectSamples() {
       queryClient.invalidateQueries({ queryKey: ['request-detail', input.request.id] });
     },
     onError: (e: Error) => toast.error(`Sample collection failed — ${e.message}`),
+  });
+}
+
+/**
+ * Pharmacist marks a prescription as dispensed. Stamps who/when on the
+ * request and logs a DISPENSED timeline event. Does NOT touch the lab
+ * workflow status — dispensing runs in parallel to pathology.
+ */
+export function useDispenseMedicines() {
+  const { user } = useAuth();
+  return useMutation({
+    mutationFn: async (input: { request: PathRequest; medicineCount: number; note?: string }) => {
+      if (!user) throw new Error('Not authenticated');
+      const nowIso = new Date().toISOString();
+
+      const { error: reqError } = await supabase
+        .from('requests')
+        .update({
+          dispensed_by_id: user.id,
+          dispensed_by_name: user.name,
+          dispensed_at: nowIso,
+        })
+        .eq('id', input.request.id);
+      if (reqError) throw reqError;
+
+      const { error: tlError } = await supabase.from('request_timeline').insert({
+        request_id: input.request.id,
+        stage: 'DISPENSED',
+        actor_id: user.id,
+        actor_name: user.name,
+        actor_role: user.role,
+        note: [`Dispensed ${input.medicineCount} medicine(s) from pharmacy`, input.note?.trim() || null]
+          .filter(Boolean)
+          .join(' — '),
+      });
+      if (tlError) throw tlError;
+    },
+    onSuccess: (_d, input) => {
+      queryClient.invalidateQueries({ queryKey: ['requests'] });
+      queryClient.invalidateQueries({ queryKey: ['request-detail', input.request.id] });
+    },
+    onError: (e: Error) => toast.error(`Dispensing failed — ${e.message}`),
   });
 }
 

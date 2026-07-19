@@ -8,6 +8,7 @@ const ROLE_STYLES: Record<UserRole, string> = {
   doctor: 'bg-emerald-100 text-emerald-800 border-emerald-200',
   pathologist: 'bg-violet-100 text-violet-800 border-violet-200',
   medical: 'bg-cyan-100 text-cyan-800 border-cyan-200',
+  pharmacist: 'bg-teal-100 text-teal-800 border-teal-200',
   user: 'bg-blue-100 text-blue-800 border-blue-200',
 };
 
@@ -17,6 +18,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
   doctor: 'Doctor',
   pathologist: 'Pathologist',
   medical: 'Medical Services',
+  pharmacist: 'Pharmacist',
   user: 'Employee',
 };
 

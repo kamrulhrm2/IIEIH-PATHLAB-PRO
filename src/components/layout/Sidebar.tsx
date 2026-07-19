@@ -36,19 +36,20 @@ interface NavItem {
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'hr', 'doctor', 'pathologist', 'medical', 'user'] },
-  { to: '/requests/new', label: 'New Request', icon: FilePlus2, roles: ['admin', 'hr', 'doctor', 'pathologist', 'medical', 'user'] },
-  { to: '/requests/mine', label: 'My Requests', icon: ClipboardList, roles: ['admin', 'hr', 'doctor', 'pathologist', 'medical', 'user'] },
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'hr', 'doctor', 'pathologist', 'medical', 'pharmacist', 'user'] },
+  { to: '/requests/new', label: 'New Request', icon: FilePlus2, roles: ['admin', 'hr', 'doctor', 'pathologist', 'medical', 'pharmacist', 'user'] },
+  { to: '/requests/mine', label: 'My Requests', icon: ClipboardList, roles: ['admin', 'hr', 'doctor', 'pathologist', 'medical', 'pharmacist', 'user'] },
   { to: '/requests/doctor', label: 'Doctor Queue', icon: Stethoscope, roles: ['admin', 'doctor'] },
   { to: '/requests/hr', label: 'HR Queue', icon: Users, roles: ['admin', 'hr'] },
   { to: '/requests/restricted', label: 'Restricted Queue', icon: AlertTriangle, roles: ['admin'] },
   { to: '/requests/medical', label: 'Medical Service Queue', icon: Activity, roles: ['admin', 'medical'] },
   { to: '/requests/pathology', label: 'Pathology Queue', icon: Microscope, roles: ['admin', 'pathologist'] },
+  { to: '/requests/pharmacy', label: 'Pharmacy Queue', icon: Pill, roles: ['admin', 'pharmacist'] },
   { to: '/requests/all', label: 'All Requests', icon: FileText, roles: ['admin'] },
   { to: '/employees', label: 'Employees', icon: UserCheck, roles: ['admin', 'hr'] },
-  { to: '/dependents', label: 'Dependents', icon: Heart, roles: ['admin', 'hr', 'doctor', 'pathologist', 'medical', 'user'] },
+  { to: '/dependents', label: 'Dependents', icon: Heart, roles: ['admin', 'hr', 'doctor', 'pathologist', 'medical', 'pharmacist', 'user'] },
   { to: '/tests', label: 'Test Library', icon: FlaskConical, roles: ['admin'] },
-  { to: '/medicines', label: 'Medicine Library', icon: Pill, roles: ['admin', 'doctor'] },
+  { to: '/medicines', label: 'Medicine Library', icon: Pill, roles: ['admin', 'doctor', 'pharmacist'] },
   { to: '/users', label: 'System Users', icon: Lock, roles: ['admin'] },
   { to: '/reports', label: 'Reports', icon: BarChart3, roles: ['admin'] },
 ];

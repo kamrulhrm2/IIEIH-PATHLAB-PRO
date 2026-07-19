@@ -69,7 +69,7 @@ export default function App() {
         <Route
           path="/medicines"
           element={
-            <Protected roles={['admin', 'doctor']}>
+            <Protected roles={['admin', 'doctor', 'pharmacist']}>
               <MedicineLibraryPage />
             </Protected>
           }
@@ -135,6 +135,14 @@ export default function App() {
           element={
             <Protected roles={['admin', 'pathologist']}>
               <RequestsPage mode="pathology" />
+            </Protected>
+          }
+        />
+        <Route
+          path="/requests/pharmacy"
+          element={
+            <Protected roles={['admin', 'pharmacist']}>
+              <RequestsPage mode="pharmacy" />
             </Protected>
           }
         />

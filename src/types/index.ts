@@ -1,5 +1,5 @@
 export type EmpStatus = 'confirmed' | 'non-confirmed';
-export type UserRole = 'admin' | 'hr' | 'doctor' | 'pathologist' | 'medical' | 'user';
+export type UserRole = 'admin' | 'hr' | 'doctor' | 'pathologist' | 'medical' | 'pharmacist' | 'user';
 export type RelationType = 'Self' | 'Spouse' | 'Father' | 'Mother' | 'Son' | 'Daughter';
 export type GenderType = 'Male' | 'Female' | 'Other';
 
@@ -31,7 +31,8 @@ export type TimelineStage =
   | 'MEDICAL_REJECTED'
   | 'SAMPLE_COLLECTED'
   | 'PATH_PARTIAL'
-  | 'COMPLETED';
+  | 'COMPLETED'
+  | 'DISPENSED';
 
 export type TestApproval = 'pending' | 'approved' | 'rejected' | 'completed';
 
@@ -160,6 +161,8 @@ export interface PathRequest {
   medical_at: string | null;
   pathologist_name: string | null;
   pathologist_at: string | null;
+  dispensed_by_name: string | null;
+  dispensed_at: string | null;
   completed_at: string | null;
   created_at: string;
   updated_at: string;
@@ -172,6 +175,7 @@ export interface RequestSummary extends PathRequest {
   approved_tests: number;
   approved_amount: number;
   total_amount: number;
+  medicine_count: number;
 }
 
 export interface RequestTest {
@@ -210,4 +214,4 @@ export interface EmployeeQuota {
   is_custom: boolean;
 }
 
-export type QueueMode = 'mine' | 'all' | 'doctor' | 'hr' | 'restricted' | 'medical' | 'pathology';
+export type QueueMode = 'mine' | 'all' | 'doctor' | 'hr' | 'restricted' | 'medical' | 'pathology' | 'pharmacy';

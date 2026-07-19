@@ -32,6 +32,7 @@ import { useQuotaLimit } from '@/hooks/useSettings';
 import {
   useAddRequestTest,
   useCollectSamples,
+  useDispenseMedicines,
   useEmployeeUsage,
   useEmployeeYearRequests,
   useRemoveRequestTest,
@@ -49,6 +50,11 @@ import {
   doseNotation,
   doseDetail,
 } from '@/components/shared/PrescriptionSlip';
+import {
+  DispensingSlip,
+  downloadDispensingSlipPdf,
+  requiredQty,
+} from '@/components/shared/DispensingSlip';
 import {
   Select,
   SelectContent,
@@ -116,6 +122,8 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
   const { data: detail, isLoading } = useRequestDetail(request?.id);
   const action = useRequestAction();
   const collectSamples = useCollectSamples();
+  const dispense = useDispenseMedicines();
+  const [dispBusy, setDispBusy] = useState(false);
   const { data: quotaLimit = 5 } = useQuotaLimit();
   const addTest = useAddRequestTest();
   const removeTest = useRemoveRequestTest();
@@ -155,17 +163,20 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
     (role === 'admin' || role === 'pathologist');
   const showCheckboxes = canDoctorAct || canPathAct || canCollectSample;
 
-  // Task 3: patient complaint + doctor prescription are hidden from the pathology view.
+  // Patient complaint + doctor prescription are hidden from the pathology view.
   const hideClinicalInfo = role === 'pathologist';
-  // Task 4: the patient side (requester or the employee it belongs to) can download
-  // the doctor's advice/prescription at any time once the doctor has reviewed.
+  // Prescription download: the patient side (requester or the employee it belongs to),
+  // admin, and the PHARMACIST (who can view/download every prescription).
   const canDownloadRx =
     !!request &&
     !!user &&
     (request.requester_id === user.id ||
       (!!user.emp_code && request.employee_code === user.emp_code) ||
-      role === 'admin') &&
+      role === 'admin' ||
+      role === 'pharmacist') &&
     !!(request.doctor_prescription || request.doctor_name);
+  // Pharmacy dispensing panel: pharmacist/admin, once a prescription exists
+  const canDispense = !!request && (role === 'pharmacist' || role === 'admin');
 
   const tests = detail?.tests ?? [];
   const timeline = detail?.timeline ?? [];
@@ -474,6 +485,28 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
     } finally {
       setRxBusy(false);
     }
+  };
+
+  // Pharmacy: download the auto-calculated dispensing checklist
+  const handleDownloadDispensingSlip = async () => {
+    setDispBusy(true);
+    try {
+      const fileName = `Dispensing-${request.req_no}`;
+      await downloadDispensingSlipPdf(fileName);
+      toast.success(`Dispensing slip downloaded: ${fileName}.pdf`);
+    } catch (e) {
+      toast.error(`Could not download dispensing slip — ${(e as Error).message}`);
+    } finally {
+      setDispBusy(false);
+    }
+  };
+
+  // Pharmacy: stamp the request as dispensed by this pharmacist
+  const handleMarkDispensed = () => {
+    dispense.mutate(
+      { request, medicineCount: rxMedsSaved.length, note },
+      { onSuccess: () => finish(`Medicines dispensed for ${request.req_no}`) }
+    );
   };
 
   const hasAction = canDoctorAct || canHrAct || canAdminAct || canMedicalAct || canPathAct || canCollectSample;
@@ -832,6 +865,60 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
               </div>
             </div>
           )}
+          {canDispense && rxMedsSaved.length > 0 && (
+            <div className="rounded-lg border border-teal-200 bg-teal-50 p-3">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-teal-700">
+                  <Pill className="h-3.5 w-3.5" /> Pharmacy Dispensing
+                </p>
+                {request.dispensed_at ? (
+                  <Badge
+                    variant="outline"
+                    className="border-emerald-200 bg-emerald-100 text-emerald-800"
+                  >
+                    <Check className="mr-1 h-3 w-3" />
+                    Dispensed · {request.dispensed_by_name} ·{' '}
+                    {formatDateTime(request.dispensed_at)}
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="border-amber-200 bg-amber-100 text-amber-800">
+                    Awaiting dispensing
+                  </Badge>
+                )}
+              </div>
+              <div className="space-y-1">
+                {rxMedsSaved.map((m, i) => (
+                  <div key={m.id} className="flex items-center justify-between gap-2 text-sm">
+                    <span className="min-w-0 truncate">
+                      {i + 1}.{' '}
+                      <span className="font-medium text-slate-800">
+                        {m.medicine_name}
+                        {m.strength ? ` ${m.strength}` : ''}
+                      </span>
+                      <span className="ml-1.5 font-mono text-xs text-slate-500">
+                        {doseNotation(m) || 'as directed'}
+                      </span>
+                      {m.duration_days ? (
+                        <span className="ml-1 text-xs text-slate-500">× {m.duration_days}d</span>
+                      ) : null}
+                    </span>
+                    <span className="shrink-0 rounded bg-white px-2 py-0.5 text-xs font-bold text-teal-700 ring-1 ring-teal-200">
+                      {requiredQty(m).label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2 text-right text-xs font-semibold text-teal-800">
+                Auto-calculated total:{' '}
+                {rxMedsSaved.reduce((s, m) => s + (requiredQty(m).pieces ?? 0), 0) > 0
+                  ? `${rxMedsSaved.reduce((s, m) => s + (requiredQty(m).pieces ?? 0), 0)} pcs`
+                  : ''}
+                {rxMedsSaved.filter((m) => requiredQty(m).label === '1 pack').length > 0
+                  ? ` + ${rxMedsSaved.filter((m) => requiredQty(m).label === '1 pack').length} pack(s)`
+                  : ''}
+              </p>
+            </div>
+          )}
 
           {/* Section 6 — Timeline */}
           <div>
@@ -862,7 +949,9 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
           </div>
 
           {/* Section 7 — Action area */}
-          {(hasAction || canPrint || canDownloadRx) && <Separator />}
+          {(hasAction || canPrint || canDownloadRx || (canDispense && rxMedsSaved.length > 0)) && (
+            <Separator />
+          )}
           {canDoctorAct && (
             <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3">
               <p className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-blue-700">
@@ -1043,7 +1132,7 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
               rows={2}
             />
           )}
-          {(hasAction || canPrint || canDownloadRx) && (
+          {(hasAction || canPrint || canDownloadRx || (canDispense && rxMedsSaved.length > 0)) && (
             <div className="flex flex-wrap justify-end gap-2">
               {canDoctorAct && (
                 <>
@@ -1114,6 +1203,36 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
                   Report Delivered ({checkedRows.length})
                 </Button>
               )}
+              {canDispense && rxMedsSaved.length > 0 && (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={handleDownloadDispensingSlip}
+                    disabled={dispBusy}
+                  >
+                    {dispBusy ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <FileDown className="h-4 w-4" />
+                    )}
+                    {dispBusy ? 'Generating…' : 'Dispensing Slip'}
+                  </Button>
+                  {!request.dispensed_at && (
+                    <Button
+                      variant="success"
+                      onClick={handleMarkDispensed}
+                      disabled={dispense.isPending}
+                    >
+                      {dispense.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Pill className="h-4 w-4" />
+                      )}
+                      Mark as Dispensed
+                    </Button>
+                  )}
+                </>
+              )}
               {canDownloadRx && (
                 <Button variant="outline" onClick={handleDownloadPrescription} disabled={rxBusy}>
                   {rxBusy ? (
@@ -1143,6 +1262,9 @@ export function RequestDetailDialog({ request, onClose }: RequestDetailDialogPro
       {canPrint && <RequisitionSlip request={request} tests={tests} />}
       {canDownloadRx && (
         <PrescriptionSlip request={request} tests={tests} medicines={rxMedsSaved} />
+      )}
+      {canDispense && rxMedsSaved.length > 0 && (
+        <DispensingSlip request={request} medicines={rxMedsSaved} />
       )}
     </>
   );

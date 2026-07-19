@@ -1102,6 +1102,9 @@ export default function EmployeesPage() {
                   <SelectItem value="medical">
                     Medical Services — Medical queue, approve/reject
                   </SelectItem>
+                  <SelectItem value="pharmacist">
+                    Pharmacist — Pharmacy queue, dispense medicines
+                  </SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-slate-500">
