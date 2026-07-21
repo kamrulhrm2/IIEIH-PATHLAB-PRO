@@ -57,6 +57,113 @@ export function useSaveMedicine() {
   });
 }
 
+export type NewMedicine = Omit<Medicine, 'id' | 'created_at' | 'updated_at'>;
+
+const IMPORT_CHUNK = 500;
+/** medicines_name_strength_key is a case-insensitive expression index
+ * (lower(name), COALESCE(lower(strength),'')) — PostgREST upsert only
+ * targets plain-column unique constraints, so duplicates are matched
+ * client-side and routed to UPDATE instead of a conflict-based upsert. */
+const dupKey = (name: string, strength: string | null) =>
+  `${name.trim().toLowerCase()}|${(strength ?? '').trim().toLowerCase()}`;
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+/**
+ * Bulk import medicines from CSV. Existing medicines (matched case-insensitively
+ * on name+strength) are UPDATED with the new row's details; everything else is
+ * inserted. Supports unlimited rows via chunking.
+ */
+export function useBulkInsertMedicines() {
+  return useMutation({
+    mutationFn: async (rows: NewMedicine[]) => {
+      if (rows.length === 0) return { total: 0, inserted: 0, updated: 0, failedBatches: 0 };
+
+      // Pre-fetch existing (name, strength) -> id, paginated
+      const existing = new Map<string, string>();
+      let from = 0;
+      let hasMore = true;
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('medicines')
+          .select('id, name, strength')
+          .range(from, from + 1000 - 1);
+        if (error) throw error;
+        (data ?? []).forEach((m) => existing.set(dupKey(m.name, m.strength), m.id));
+        hasMore = (data?.length ?? 0) === 1000;
+        from += 1000;
+      }
+
+      const toInsert: NewMedicine[] = [];
+      const toUpdate: { id: string; fields: NewMedicine }[] = [];
+      for (const row of rows) {
+        const id = existing.get(dupKey(row.name, row.strength));
+        if (id) toUpdate.push({ id, fields: row });
+        else toInsert.push(row);
+      }
+
+      let inserted = 0;
+      let updated = 0;
+      const errors: string[] = [];
+
+      for (const batch of chunk(toInsert, IMPORT_CHUNK)) {
+        const { error } = await supabase.from('medicines').insert(batch);
+        if (error) errors.push(`Insert batch: ${error.message}`);
+        else inserted += batch.length;
+      }
+
+      // Row-level updates (each row can carry different values) — bounded concurrency
+      for (const batch of chunk(toUpdate, 25)) {
+        const results = await Promise.all(
+          batch.map((u) =>
+            supabase
+              .from('medicines')
+              .update({ ...u.fields, updated_at: new Date().toISOString() })
+              .eq('id', u.id)
+          )
+        );
+        results.forEach((r) => {
+          if (r.error) errors.push(`Update: ${r.error.message}`);
+          else updated += 1;
+        });
+      }
+
+      if (inserted === 0 && updated === 0 && errors.length > 0) {
+        throw new Error(errors[0]);
+      }
+
+      return { total: rows.length, inserted, updated, failedBatches: errors.length };
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['medicines'] });
+      const failed = result.failedBatches ?? 0;
+      if (failed > 0) {
+        toast.warning(
+          `⚠️ Partial import: ${result.inserted + result.updated}/${result.total} processed. ${failed} row(s)/batch(es) failed.`
+        );
+      } else if (result.inserted > 0 && result.updated > 0) {
+        toast.success(
+          `✅ Import complete: ${result.inserted} new + ${result.updated} updated = ${result.total} total`
+        );
+      } else if (result.inserted > 0) {
+        toast.success(`✅ ${result.inserted} new medicine(s) imported successfully`);
+      } else if (result.updated > 0) {
+        toast.success(`✅ ${result.updated} existing medicine(s) updated successfully`);
+      } else {
+        toast.success(`✅ Import processed: ${result.total} records`);
+      }
+    },
+    onError: (e: Error) => {
+      console.error('[MEDICINES BULK IMPORT ERROR]', e);
+      toast.error(`❌ Bulk import failed — ${e.message}`);
+    },
+  });
+}
+
 export function useDeleteMedicine() {
   return useMutation({
     mutationFn: async (id: string) => {
