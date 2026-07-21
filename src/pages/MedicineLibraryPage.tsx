@@ -43,7 +43,7 @@ import {
 import { downloadCsv, parseCsv } from '@/lib/csv';
 import type { Medicine } from '@/types';
 
-const FORMS = ['Tablet', 'Capsule', 'Syrup', 'Injection', 'Drops', 'Ointment', 'Inhaler', 'Other'];
+const FORMS = ['Tablet', 'Capsule', 'Syrup', 'Injection', 'Drops', 'Cream', 'Ointment', 'Inhaler', 'Other'];
 
 interface FormState {
   id?: string;

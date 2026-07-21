@@ -6,15 +6,20 @@ import { doseNotation, mealLabel } from '@/components/shared/PrescriptionSlip';
  * DispensingSlip — B&W pharmacy checklist (only the logo keeps color).
  * Auto-calculates the required quantity per medicine:
  *   doses/day (from the 1+0+1 schedule) × duration days = pieces needed.
- * Non-countable forms (Syrup, Drops, Ointment, Inhaler) dispense as packs.
+ * Cream/Drops always dispense as a single unit (1 pcs — one tube/bottle
+ * covers the whole course, regardless of dose schedule or duration).
+ * Other non-countable forms (Syrup, Injection, Ointment, Inhaler) dispense
+ * as packs.
  */
 
 const DISP_ID = 'pathlab-dispensing-slip';
 
 const COUNTABLE_FORMS = ['Tablet', 'Capsule'];
+/** Single-unit forms — one tube/bottle per course, dispensed as "1 pcs". */
+const SINGLE_UNIT_FORMS = ['Cream', 'Drops'];
 
 export interface DispenseQty {
-  /** e.g. "10 pcs", "1 pack", "As directed" */
+  /** e.g. "10 pcs", "1 pcs", "1 pack", "As directed" */
   label: string;
   /** numeric pieces when computable, else null */
   pieces: number | null;
@@ -22,6 +27,10 @@ export interface DispenseQty {
 
 /** Auto-calculate the required quantity for one prescribed medicine. */
 export function requiredQty(m: RequestMedicine): DispenseQty {
+  if (m.form && SINGLE_UNIT_FORMS.includes(m.form)) {
+    return { label: '1 pcs', pieces: 1 };
+  }
+
   const dosesPerDay =
     (m.t_morning ? 1 : 0) + (m.t_afternoon ? 1 : 0) + (m.t_evening ? 1 : 0) + (m.t_night ? 1 : 0);
 
