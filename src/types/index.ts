@@ -214,4 +214,4 @@ export interface EmployeeQuota {
   is_custom: boolean;
 }
 
-export type QueueMode = 'mine' | 'all' | 'doctor' | 'hr' | 'restricted' | 'medical' | 'pathology' | 'pharmacy';
+export type QueueMode = 'mine' | 'all' | 'doctor' | 'hr' | 'medical' | 'pathology' | 'pharmacy';

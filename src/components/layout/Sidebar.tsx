@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   Activity,
-  AlertTriangle,
   BarChart3,
   ClipboardList,
   FilePlus2,
@@ -41,7 +40,6 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/requests/mine', label: 'My Requests', icon: ClipboardList, roles: ['admin', 'hr', 'doctor', 'pathologist', 'medical', 'pharmacist', 'user'] },
   { to: '/requests/doctor', label: 'Doctor Queue', icon: Stethoscope, roles: ['admin', 'doctor'] },
   { to: '/requests/hr', label: 'HR Queue', icon: Users, roles: ['admin', 'hr'] },
-  { to: '/requests/restricted', label: 'Restricted Queue', icon: AlertTriangle, roles: ['admin'] },
   { to: '/requests/medical', label: 'Medical Service Queue', icon: Activity, roles: ['admin', 'medical'] },
   { to: '/requests/pathology', label: 'Pathology Queue', icon: Microscope, roles: ['admin', 'pathologist'] },
   { to: '/requests/pharmacy', label: 'Pharmacy Queue', icon: Pill, roles: ['admin', 'pharmacist'] },

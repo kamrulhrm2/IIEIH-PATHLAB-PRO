@@ -54,7 +54,6 @@ export function useRequestList(mode: QueueMode) {
           if (user!.role === 'doctor') q = q.eq('assigned_doctor_id', user!.id);
         }
         else if (mode === 'hr') q = q.in('status', ['PENDING_HR', 'PENDING_HR_PARTIAL']);
-        else if (mode === 'restricted') q = q.in('status', ['HR_RESTRICTED', 'PENDING_ADMIN']);
         else if (mode === 'medical') q = q.eq('status', 'PENDING_MEDICAL');
         else if (mode === 'pathology') q = q.in('status', ['PENDING_PATHOLOGY', 'SAMPLE_COLLECTED', 'PATH_PARTIAL']);
         // Pharmacy queue: every request with a prescription, not yet dispensed
