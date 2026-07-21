@@ -3,6 +3,8 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { toast } from 'sonner';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAuth } from '@/context/AuthContext';
+import { useRolePermissions } from '@/hooks/usePermissions';
+import { hasPermission } from '@/lib/permissions';
 import LoginPage from '@/pages/LoginPage';
 import DashboardPage from '@/pages/DashboardPage';
 import EmployeesPage from '@/pages/EmployeesPage';
@@ -12,7 +14,8 @@ import MedicineLibraryPage from '@/pages/MedicineLibraryPage';
 import NewRequestPage from '@/pages/NewRequestPage';
 import RequestsPage from '@/pages/RequestsPage';
 import UsersPage from '@/pages/UsersPage';
-import type { UserRole } from '@/types';
+import PermissionMatrixPage from '@/pages/PermissionMatrixPage';
+import type { FeatureKey } from '@/types';
 
 const ReportsPage = lazy(() => import('@/pages/ReportsPage'));
 
@@ -30,10 +33,19 @@ function NotFound() {
   return <Navigate to="/dashboard" replace />;
 }
 
-function Protected({ roles, children }: { roles?: UserRole[]; children: ReactElement }) {
+/**
+ * Gates a route behind the Master Permission Matrix. Omit featureKey for
+ * pages every authenticated user always has (e.g. Dashboard). Admin always
+ * passes (see hasPermission) so admin can never be locked out.
+ */
+function Protected({ featureKey, children }: { featureKey?: FeatureKey; children: ReactElement }) {
   const { user } = useAuth();
+  const { data: matrix, isLoading } = useRolePermissions();
   if (!user) return <Navigate to="/login" replace />;
-  if (roles && !roles.includes(user.role)) return <AccessDenied />;
+  if (featureKey && user.role !== 'admin') {
+    if (isLoading) return null;
+    if (!hasPermission(matrix, user.role, featureKey)) return <AccessDenied />;
+  }
   return children;
 }
 
@@ -52,16 +64,23 @@ export default function App() {
         <Route
           path="/employees"
           element={
-            <Protected roles={['admin', 'hr']}>
+            <Protected featureKey="employees">
               <EmployeesPage />
             </Protected>
           }
         />
-        <Route path="/dependents" element={<DependentsPage />} />
+        <Route
+          path="/dependents"
+          element={
+            <Protected featureKey="dependents">
+              <DependentsPage />
+            </Protected>
+          }
+        />
         <Route
           path="/tests"
           element={
-            <Protected roles={['admin']}>
+            <Protected featureKey="test_library">
               <TestLibraryPage />
             </Protected>
           }
@@ -69,7 +88,7 @@ export default function App() {
         <Route
           path="/medicines"
           element={
-            <Protected roles={['admin', 'doctor', 'pharmacist']}>
+            <Protected featureKey="medicine_library">
               <MedicineLibraryPage />
             </Protected>
           }
@@ -77,7 +96,7 @@ export default function App() {
         <Route
           path="/requests/new"
           element={
-            <Protected>
+            <Protected featureKey="new_request">
               <NewRequestPage />
             </Protected>
           }
@@ -85,7 +104,7 @@ export default function App() {
         <Route
           path="/requests/mine"
           element={
-            <Protected roles={['admin', 'doctor', 'pathologist', 'medical', 'user']}>
+            <Protected featureKey="my_requests">
               <RequestsPage mode="mine" />
             </Protected>
           }
@@ -93,7 +112,7 @@ export default function App() {
         <Route
           path="/requests/all"
           element={
-            <Protected roles={['admin']}>
+            <Protected featureKey="all_requests">
               <RequestsPage mode="all" />
             </Protected>
           }
@@ -101,7 +120,7 @@ export default function App() {
         <Route
           path="/requests/doctor"
           element={
-            <Protected roles={['admin', 'doctor']}>
+            <Protected featureKey="doctor_queue">
               <RequestsPage mode="doctor" />
             </Protected>
           }
@@ -109,7 +128,7 @@ export default function App() {
         <Route
           path="/requests/hr"
           element={
-            <Protected roles={['admin', 'hr']}>
+            <Protected featureKey="hr_queue">
               <RequestsPage mode="hr" />
             </Protected>
           }
@@ -117,7 +136,7 @@ export default function App() {
         <Route
           path="/requests/medical"
           element={
-            <Protected roles={['admin', 'medical']}>
+            <Protected featureKey="medical_queue">
               <RequestsPage mode="medical" />
             </Protected>
           }
@@ -125,7 +144,7 @@ export default function App() {
         <Route
           path="/requests/pathology"
           element={
-            <Protected roles={['admin', 'pathologist']}>
+            <Protected featureKey="pathology_queue">
               <RequestsPage mode="pathology" />
             </Protected>
           }
@@ -133,7 +152,7 @@ export default function App() {
         <Route
           path="/requests/pharmacy"
           element={
-            <Protected roles={['admin', 'pharmacist']}>
+            <Protected featureKey="pharmacy_queue">
               <RequestsPage mode="pharmacy" />
             </Protected>
           }
@@ -141,7 +160,7 @@ export default function App() {
         <Route
           path="/users"
           element={
-            <Protected roles={['admin']}>
+            <Protected featureKey="system_users">
               <UsersPage />
             </Protected>
           }
@@ -149,10 +168,18 @@ export default function App() {
         <Route
           path="/reports"
           element={
-            <Protected roles={['admin']}>
+            <Protected featureKey="reports">
               <Suspense fallback={<div className="p-6 text-sm text-slate-500">Loading…</div>}>
                 <ReportsPage />
               </Suspense>
+            </Protected>
+          }
+        />
+        <Route
+          path="/permissions"
+          element={
+            <Protected featureKey="permission_matrix">
+              <PermissionMatrixPage />
             </Protected>
           }
         />

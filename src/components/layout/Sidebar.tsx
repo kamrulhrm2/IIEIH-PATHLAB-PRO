@@ -14,6 +14,7 @@ import {
   LogOut,
   Microscope,
   Pill,
+  ShieldCheck,
   Stethoscope,
   UserCheck,
   Users,
@@ -24,40 +25,47 @@ import { Button } from '@/components/ui/button';
 import { ChangePasswordDialog } from '@/components/shared/ChangePasswordDialog';
 import { RoleBadge } from '@/components/shared/RoleBadge';
 import { useAuth } from '@/context/AuthContext';
+import { useRolePermissions } from '@/hooks/usePermissions';
+import { hasPermission } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
-import type { UserRole } from '@/types';
+import type { FeatureKey } from '@/types';
 
 interface NavItem {
   to: string;
   label: string;
   icon: LucideIcon;
-  roles: UserRole[];
+  /** Omit for pages every authenticated user always has (e.g. Dashboard). */
+  featureKey?: FeatureKey;
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'hr', 'doctor', 'pathologist', 'medical', 'pharmacist', 'user'] },
-  { to: '/requests/new', label: 'New Request', icon: FilePlus2, roles: ['admin', 'hr', 'doctor', 'pathologist', 'medical', 'pharmacist', 'user'] },
-  { to: '/requests/mine', label: 'My Requests', icon: ClipboardList, roles: ['admin', 'hr', 'doctor', 'pathologist', 'medical', 'pharmacist', 'user'] },
-  { to: '/requests/doctor', label: 'Doctor Queue', icon: Stethoscope, roles: ['admin', 'doctor'] },
-  { to: '/requests/hr', label: 'HR Queue', icon: Users, roles: ['admin', 'hr'] },
-  { to: '/requests/medical', label: 'Medical Service Queue', icon: Activity, roles: ['admin', 'medical'] },
-  { to: '/requests/pathology', label: 'Pathology Queue', icon: Microscope, roles: ['admin', 'pathologist'] },
-  { to: '/requests/pharmacy', label: 'Pharmacy Queue', icon: Pill, roles: ['admin', 'pharmacist'] },
-  { to: '/requests/all', label: 'All Requests', icon: FileText, roles: ['admin'] },
-  { to: '/employees', label: 'Employees', icon: UserCheck, roles: ['admin', 'hr'] },
-  { to: '/dependents', label: 'Dependents', icon: Heart, roles: ['admin', 'hr', 'doctor', 'pathologist', 'medical', 'pharmacist', 'user'] },
-  { to: '/tests', label: 'Test Library', icon: FlaskConical, roles: ['admin'] },
-  { to: '/medicines', label: 'Medicine Library', icon: Pill, roles: ['admin', 'doctor', 'pharmacist'] },
-  { to: '/users', label: 'System Users', icon: Lock, roles: ['admin'] },
-  { to: '/reports', label: 'Reports', icon: BarChart3, roles: ['admin'] },
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/requests/new', label: 'New Request', icon: FilePlus2, featureKey: 'new_request' },
+  { to: '/requests/mine', label: 'My Requests', icon: ClipboardList, featureKey: 'my_requests' },
+  { to: '/requests/doctor', label: 'Doctor Queue', icon: Stethoscope, featureKey: 'doctor_queue' },
+  { to: '/requests/hr', label: 'HR Queue', icon: Users, featureKey: 'hr_queue' },
+  { to: '/requests/medical', label: 'Medical Service Queue', icon: Activity, featureKey: 'medical_queue' },
+  { to: '/requests/pathology', label: 'Pathology Queue', icon: Microscope, featureKey: 'pathology_queue' },
+  { to: '/requests/pharmacy', label: 'Pharmacy Queue', icon: Pill, featureKey: 'pharmacy_queue' },
+  { to: '/requests/all', label: 'All Requests', icon: FileText, featureKey: 'all_requests' },
+  { to: '/employees', label: 'Employees', icon: UserCheck, featureKey: 'employees' },
+  { to: '/dependents', label: 'Dependents', icon: Heart, featureKey: 'dependents' },
+  { to: '/tests', label: 'Test Library', icon: FlaskConical, featureKey: 'test_library' },
+  { to: '/medicines', label: 'Medicine Library', icon: Pill, featureKey: 'medicine_library' },
+  { to: '/users', label: 'System Users', icon: Lock, featureKey: 'system_users' },
+  { to: '/reports', label: 'Reports', icon: BarChart3, featureKey: 'reports' },
+  { to: '/permissions', label: 'Permission Matrix', icon: ShieldCheck, featureKey: 'permission_matrix' },
 ];
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const { user, logout } = useAuth();
   const [pwOpen, setPwOpen] = useState(false);
+  const { data: matrix } = useRolePermissions();
   if (!user) return null;
 
-  const items = NAV_ITEMS.filter((item) => item.roles.includes(user.role));
+  const items = NAV_ITEMS.filter(
+    (item) => !item.featureKey || hasPermission(matrix, user.role, item.featureKey)
+  );
   const initials = user.name
     .split(' ')
     .map((w) => w[0])

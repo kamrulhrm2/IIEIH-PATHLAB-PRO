@@ -3,6 +3,31 @@ export type UserRole = 'admin' | 'hr' | 'doctor' | 'pathologist' | 'medical' | '
 export type RelationType = 'Self' | 'Spouse' | 'Father' | 'Mother' | 'Son' | 'Daughter';
 export type GenderType = 'Male' | 'Female' | 'Other';
 
+/** Controllable navigation/page permissions (the Master Permission Matrix). */
+export type FeatureKey =
+  | 'new_request'
+  | 'my_requests'
+  | 'dependents'
+  | 'doctor_queue'
+  | 'hr_queue'
+  | 'medical_queue'
+  | 'pathology_queue'
+  | 'pharmacy_queue'
+  | 'all_requests'
+  | 'employees'
+  | 'test_library'
+  | 'medicine_library'
+  | 'system_users'
+  | 'reports'
+  | 'permission_matrix';
+
+export interface RolePermission {
+  role: UserRole;
+  feature_key: FeatureKey;
+  allowed: boolean;
+  updated_at: string;
+}
+
 export type RequestStatus =
   | 'PENDING_DOCTOR'
   | 'DOCTOR_REJECTED'
